@@ -150,7 +150,7 @@ class CT_Experiment:
             results['rates'].append((time, rate))
             results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
             time2, cwnd = get_tcpprobe_cwnd(logFile, flow['srcIP'], flow['dstIP'])
-            results['cwnd'].append(time2, cwnd)
+            results['cwnd'].append((time2, cwnd))
 
         return results
 
