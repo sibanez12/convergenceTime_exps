@@ -13,8 +13,8 @@ class Workload:
         self.numLinksFormat = r'num_links: ([\d]*)'
         self.linkCapFormat = r'link_capacities \(Gbps\): ([\d]*)'
         self.flowFormat = r'(?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
-        #self.ipHostMap = {'10.0.0.1':'han-1', '10.0.0.2':'han-2', '10.0.0.3':'han-3', '10.0.0.4':'han-4', '10.0.0.5':'han-5'}
-        self.ipHostMap = {'172.24.74.67':'netfpga2', '171.64.74.24':'nf3-test9'}
+        self.ipHostMap = {'10.0.0.1':'han-1', '10.0.0.2':'han-2', '10.0.0.3':'han-3', '10.0.0.4':'han-4', '10.0.0.5':'han-5'}
+        #self.ipHostMap = {'172.24.74.67':'netfpga2', '171.64.74.24':'nf3-test9'}
         
         # self.flows is a list with entries of the form: 
         #   {'srcIP':'xx.xx.xx.xx', 'dstIP':'yy.yy.yy.yy'}
