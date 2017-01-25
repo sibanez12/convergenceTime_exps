@@ -137,6 +137,7 @@ class CT_Experiment:
         results = {}
         results['rates'] = [] # entry i is like: (time_i, rate_i)
         results['convTimes'] = []
+        results['cwnd'] = [] # entry i is like: (time_i, cwnd_i)
         # calculate the ideal rates for the particular workload
         wf = MPMaxMin(self.workload)       
         idealRates = wf.maxmin_x
@@ -148,6 +149,8 @@ class CT_Experiment:
             time, rate = get_tcpprobe_rate(logFile, flow['srcIP'], flow['dstIP'])
             results['rates'].append((time, rate))
             results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
+            time2, cwnd = get_tcpprobe_cwnd(logFile, flow['srcIP'], flow['dstIP'])
+            results['cwnd'].append(time2, cwnd)
 
         return results
 
@@ -178,7 +181,8 @@ class CT_Experiment:
         if not os.path.exists(self.out_dir):
             os.makedirs(self.out_dir) 
 
-        self.plotFlowRates(results)        
+        self.plotFlowRates(results)
+        self.plotCwnd(results) 
         self.plotCTCDF(results)
  
     def plotCTCDF(self, results):
@@ -214,6 +218,24 @@ class CT_Experiment:
         print "Saved plot: ", plot_filename
         plt.cla()
       
+    def plotCwnd(self, results): 
+        # plot all flow rates on single plot for now
+        for (flowID, (time, rate)) in zip(range(len(results['cwnd'])), results['cwnd']):
+            plt.plot(time, rate, label='flow {0}'.format(flowID), marker='o')
+        plt.legend() 
+        plt.title('Congestion Window over time')
+        plt.xlabel('time (sec)')
+        plt.ylabel('congestion window')
+
+        plot_filename = self.out_dir + '/flow_cwnd.pdf'
+        pp = PdfPages(plot_filename)
+        pp.savefig()
+        pp.close()
+        print "Saved plot: ", plot_filename
+        plt.cla()
+ 
+
+
 
 
 

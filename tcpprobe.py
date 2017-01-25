@@ -68,7 +68,7 @@ def get_tcpprobe_rate(tcpprobeLog, srcIP, dstIP):
     try:
         tuples=parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP)
     except:
-        print "Could not parse", tcpprobeLog
+        print >> sys.stderr, "Could not parse: ", tcpprobeLog
         sys.exit(1)   
  
     for src, dst, t, sent_bytes, acked_bytes, cwnd, srtt in tuples:
@@ -89,5 +89,24 @@ def get_tcpprobe_rate(tcpprobeLog, srcIP, dstIP):
     init_time = time[0]
     time = [t - init_time for t in time]
     return time, rate
+
+
+def get_tcpprobe_cwnd(tcpprobeLog, srcIP, dstIP):
+    try:
+        tuples=parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP)
+    except:
+        print >> sys.stderr, "Could not parse: ", tcpprobeLog
+        sys.exit(1)
+
+    time = []
+    cwnd_vec = []
+    for src, dst, t, sent_bytes, acked_bytes, cwnd, srtt in tuples:
+        time.append(t)
+        cwnd_vec.append(cwnd)
+    return time, cwnd_vec
+
+
+
+
 
 
