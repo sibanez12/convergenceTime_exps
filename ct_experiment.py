@@ -195,8 +195,11 @@ class CT_Experiment:
         plt.xlabel('Convergence Time (sec)')
         plt.title('CDF of convergence times')
         plt.grid()
-    
-        plot_filename = self.out_dir + '/CT_CDF.pdf'
+   
+        base_fname = self.out_dir + '/CT_CDF'
+        self.recordData(sortData, yvals, base_fname + '.csv')
+
+        plot_filename = base_fname + '.pdf' 
         pp = PdfPages(plot_filename)
         pp.savefig()
         pp.close()
@@ -206,6 +209,8 @@ class CT_Experiment:
         cutoff = 0.05
         # plot all flow rates on single plot for now
         for (flowID, (time, rate)) in zip(range(len(results['rates'])), results['rates']):
+            csv_file = self.out_dir + '/flow_{0}_rate.csv'.format(flowID) 
+            self.recordData(time, rate, csv_file)
             t, r = self.cutToTime(time, rate, cutoff)
             plt.plot(t, r, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
@@ -224,6 +229,8 @@ class CT_Experiment:
         cutoff = 0.05
         # plot all flow rates on single plot for now
         for (flowID, (time, cwnd)) in zip(range(len(results['cwnd'])), results['cwnd']):
+            csv_file = self.out_dir + '/flow_{0}_cwnd.csv'.format(flowID) 
+            self.recordData(time, cwnd, csv_file)
             t, c = self.cutToTime(time, cwnd, cutoff)
             plt.plot(t, c, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
@@ -242,6 +249,19 @@ class CT_Experiment:
         new_time = [t for t in time if t <= cutoff]
         new_vals = [v for (v,t) in zip(vals, time) if t <= cutoff]
         return new_time, new_vals
+
+    def recordData(self, xvals, yvals, filename):
+        try:
+            os.remove(filename)
+        except OSError:
+            pass
+
+        with open(filename, 'w') as f:
+            for x, y in zip(xvals, yvals):
+                f.write('{0}, {1}\n'.format(x,y))
+
+
+
 
 
 
