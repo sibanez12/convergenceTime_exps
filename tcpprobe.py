@@ -103,6 +103,8 @@ def get_tcpprobe_cwnd(tcpprobeLog, srcIP, dstIP):
     for src, dst, t, sent_bytes, acked_bytes, cwnd, srtt in tuples:
         time.append(t)
         cwnd_vec.append(cwnd)
+    init_time = time[0]
+    time = [t - init_time for t in time]
     return time, cwnd_vec
 
 

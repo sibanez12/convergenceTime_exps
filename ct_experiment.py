@@ -203,9 +203,11 @@ class CT_Experiment:
         print "Saved plot: ", plot_filename
 
     def plotFlowRates(self, results): 
+        cutoff = 0.05
         # plot all flow rates on single plot for now
         for (flowID, (time, rate)) in zip(range(len(results['rates'])), results['rates']):
-            plt.plot(time[0:30], rate[0:30], label='flow {0}'.format(flowID), marker='o')
+            t, r = self.cutToTime(time, rate, cutoff)
+            plt.plot(t, r, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
         plt.title('Flow Rates over time')
         plt.xlabel('time (sec)')
@@ -219,9 +221,11 @@ class CT_Experiment:
         plt.cla()
       
     def plotCwnd(self, results): 
+        cutoff = 0.05
         # plot all flow rates on single plot for now
-        for (flowID, (time, rate)) in zip(range(len(results['cwnd'])), results['cwnd']):
-            plt.plot(time, rate, label='flow {0}'.format(flowID), marker='o')
+        for (flowID, (time, cwnd)) in zip(range(len(results['cwnd'])), results['cwnd']):
+            t, c = self.cutToTime(time, cwnd, cutoff)
+            plt.plot(t, c, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
         plt.title('Congestion Window over time')
         plt.xlabel('time (sec)')
@@ -234,8 +238,10 @@ class CT_Experiment:
         print "Saved plot: ", plot_filename
         plt.cla()
  
-
-
+    def cutToTime(self, time, vals, cutoff):
+        new_time = [t for t in time if t <= cutoff]
+        new_vals = [v for (v,t) in zip(vals, time) if t <= cutoff]
+        return new_time, new_vals
 
 
 
