@@ -45,7 +45,8 @@ class CT_Experiment:
  
     def setupFlow(self, flow):
         unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
-        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=%d full=1"' % flow['port']
+#        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=%d full=1"' % flow['port']
+        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=0 full=1"' # port=0 means match on all ports
         log_file = '/tmp/tcpprobe_{0}.log' 
         write_log_file = 'ssh root@{0} "cat /proc/net/tcpprobe >%s"' % log_file   
 
@@ -145,10 +146,10 @@ class CT_Experiment:
         for flowID, flow in zip(range(len(self.workload.flows)), self.workload.flows):
             host = self.workload.ipHostMap[flow['srcIP']]
             logFile = os.path.expandvars('$CT_EXP_DIR/logs/tcpprobe_{0}.log'.format(host))
-            time, rate = get_tcpprobe_rate(logFile, flow['srcIP'], flow['dstIP'])
+            time, rate = get_tcpprobe_rate(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
             results['rates'].append((time, rate))
             results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
-            time2, cwnd = get_tcpprobe_cwnd(logFile, flow['srcIP'], flow['dstIP'])
+            time2, cwnd = get_tcpprobe_cwnd(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
             results['cwnd'].append((time2, cwnd))
 
         return results

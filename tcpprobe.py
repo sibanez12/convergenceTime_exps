@@ -1,7 +1,7 @@
 
 import sys, re
 
-def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP):
+def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port):
     """
     Processes a tcp probe output file and returns a list of tuples:
       (src, dst, time, sent_bytes, acked_bytes, cwnd, srtt)
@@ -33,7 +33,7 @@ def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP):
             srtt, rcv_wnd = line.split(" ")
 
         # only get the info for a particular src, dst pair
-        if ((srcIP not in src) or (dstIP not in dst)):
+        if ((srcIP not in src) or (dstIP not in dst) or (str(port) not in dst)):
             continue
 
         # decode fields
@@ -61,12 +61,12 @@ def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP):
     return results
 
 
-def get_tcpprobe_rate(tcpprobeLog, srcIP, dstIP):
+def get_tcpprobe_rate(tcpprobeLog, srcIP, dstIP, port):
     SUMMARY_INTERVALS_PER_SECOND = 1000
     summary = {}
                     
     try:
-        tuples=parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP)
+        tuples=parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port)
     except:
         print >> sys.stderr, "Could not parse: ", tcpprobeLog
         sys.exit(1)   
@@ -91,9 +91,9 @@ def get_tcpprobe_rate(tcpprobeLog, srcIP, dstIP):
     return time, rate
 
 
-def get_tcpprobe_cwnd(tcpprobeLog, srcIP, dstIP):
+def get_tcpprobe_cwnd(tcpprobeLog, srcIP, dstIP, port):
     try:
-        tuples=parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP)
+        tuples=parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port)
     except:
         print >> sys.stderr, "Could not parse: ", tcpprobeLog
         sys.exit(1)
