@@ -26,6 +26,11 @@ class CT_Experiment:
     """
     def __init__(self, workload):
 
+        self.workload = workload        
+        self.logging_processes = []
+        self.iperf_servers = []
+        self.iperf_clients = []
+
         kill_logging = 'ssh root@{0} "pkill -u root cat"' 
 
         # kill all currently running logging processes if there are any
@@ -34,34 +39,29 @@ class CT_Experiment:
             rc = self.runCommand(command)
             if rc not in [0,1]:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)          
+
+        for flow in workload.flows:
+            self.setupFlow(flow)
  
+    def setupFlow(self, flow):
         unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
-        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=5001 full=1"'
+        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=%d full=1"' % flow['port']
         log_file = '/tmp/tcpprobe_{0}.log' 
         write_log_file = 'ssh root@{0} "cat /proc/net/tcpprobe >%s"' % log_file   
 
-        self.workload = workload        
-        self.logging_processes = []
-
-        # setup tcp_probe
-        for host in workload.allHosts:
-            self.runCommand(unload_tcp_probe.format(host))
-            self.runCommand(load_tcp_probe.format(host))
-            p = self.startProcess(write_log_file.format(host))
-            self.logging_processes.append((host, p))
+        # load tcp_probe on the source host
+        srcHost = flow['srcHost']
+        self.runCommand(unload_tcp_probe.format(srcHost))
+        self.runCommand(load_tcp_probe.format(srcHost))
+        p = self.startProcess(write_log_file.format(srcHost))
+        self.logging_processes.append((srcHost, p))
     
-        kill_iperf = 'ssh root@{0} "pkill -u root iperf"'
-        start_iperf_server = 'ssh root@{0} "iperf -s"'
-        self.iperf_servers = []
-        self.iperf_clients = []
+        start_iperf_server = 'ssh root@{0} "iperf -s -p %d"' % flow['port']
 
-        # start iperf server on each destination
-        for host in workload.dstHosts:
-            rc = self.runCommand(kill_iperf.format(host))
-            if rc not in [0,1]:
-                print >> sys.stderr, "ERROR: {0} -- failed".format(kill_iperf.format(host))
-            p = self.startProcess(start_iperf_server.format(host))
-            self.iperf_servers.append((host, p))
+        # start iperf server on the destination
+        dstHost = flow['dstHost']
+        p = self.startProcess(start_iperf_server.format(dstHost))
+        self.iperf_servers.append((dstHost, p))
 
     """
     get the global start time, distributed to each of the
@@ -71,14 +71,13 @@ class CT_Experiment:
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
 
-        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf -c {2}"')
+        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf -p {2} -c {3}"')
 
         # start iperf clients on each src machine
         for flow in self.workload.flows:
-            srcHost = self.workload.ipHostMap[flow['srcIP']]
-            command = start_iperf_client.format(srcHost, expStartTime, flow['dstIP'])
+            command = start_iperf_client.format(flow['srcHost'], expStartTime, flow['port'], flow['dstIP'])
             p = self.startProcess(command)
-            self.iperf_clients.append((srcHost, p))
+            self.iperf_clients.append((flow['srcHost'], p))
 
         # wait for all iperf clients to finish
         for (host, iperf_client) in self.iperf_clients:
@@ -114,8 +113,8 @@ class CT_Experiment:
         # copy all log files to single location
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        for host in self.workload.allHosts:
-            self.runCommand(copy_log_file.format(host)) 
+        for flow in self.workload.flows:
+            self.runCommand(copy_log_file.format(flow['srcHost'])) 
 
     def runCommand(self, command):
         print "----------------------------------------"
@@ -206,7 +205,7 @@ class CT_Experiment:
         print "Saved plot: ", plot_filename
 
     def plotFlowRates(self, results): 
-        cutoff = 0.05
+        cutoff = 3.0
         # plot all flow rates on single plot for now
         for (flowID, (time, rate)) in zip(range(len(results['rates'])), results['rates']):
             csv_file = self.out_dir + '/flow_{0}_rate.csv'.format(flowID) 
@@ -226,7 +225,7 @@ class CT_Experiment:
         plt.cla()
       
     def plotCwnd(self, results): 
-        cutoff = 0.05
+        cutoff = 3.0
         # plot all flow rates on single plot for now
         for (flowID, (time, cwnd)) in zip(range(len(results['cwnd'])), results['cwnd']):
             csv_file = self.out_dir + '/flow_{0}_cwnd.csv'.format(flowID) 
