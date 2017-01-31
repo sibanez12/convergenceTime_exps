@@ -75,7 +75,7 @@ def get_tcpprobe_stats(tcpprobeLog, srcIP, dstIP, port):
         # summary interval
         t = int(t * SUMMARY_INTERVALS_PER_SECOND) / float(SUMMARY_INTERVALS_PER_SECOND)
         # get previous statistics
-        prev_sent_bytes, prev_acked_bytes = summary.get(t, (0, 0))
+        prev_sent_bytes, prev_acked_bytes, prev_cwnd, prev_srtt = summary.get(t, (0, 0, 0, 0))
         summary[t] = (prev_sent_bytes + sent_bytes, 
                       prev_acked_bytes + acked_bytes,
                       cwnd, srtt)

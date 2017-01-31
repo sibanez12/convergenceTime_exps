@@ -208,7 +208,7 @@ class CT_Experiment:
         print "Saved plot: ", plot_filename
 
     def plotFlowRates(self, results): 
-        cutoff = 3.0
+        cutoff = 10.0
         # plot all flow rates on single plot for now
         for (flowID, (time, rate)) in zip(range(len(results['rates'])), results['rates']):
             csv_file = self.out_dir + '/flow_{0}_rate.csv'.format(flowID) 
@@ -228,7 +228,7 @@ class CT_Experiment:
         plt.cla()
       
     def plotCwnd(self, results): 
-        cutoff = 3.0
+        cutoff = 10.0
         # plot all flow rates on single plot for now
         for (flowID, (time, cwnd)) in zip(range(len(results['cwnd'])), results['cwnd']):
             csv_file = self.out_dir + '/flow_{0}_cwnd.csv'.format(flowID) 
@@ -248,7 +248,7 @@ class CT_Experiment:
         plt.cla()
 
     def plotSrtt(self, results): 
-        cutoff = 3.0
+        cutoff = 10.0
         # plot all flow rates on single plot for now
         for (flowID, (time, srtt)) in zip(range(len(results['srtt'])), results['srtt']):
             csv_file = self.out_dir + '/flow_{0}_srtt.csv'.format(flowID) 
