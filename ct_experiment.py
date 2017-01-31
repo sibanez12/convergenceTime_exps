@@ -138,6 +138,7 @@ class CT_Experiment:
         results['rates'] = [] # entry i is like: (time_i, rate_i)
         results['convTimes'] = []
         results['cwnd'] = [] # entry i is like: (time_i, cwnd_i)
+        results['srtt'] = [] # entry i is like: (time_i, srtt_i)
         # calculate the ideal rates for the particular workload
         wf = MPMaxMin(self.workload)       
         idealRates = wf.maxmin_x
@@ -146,11 +147,11 @@ class CT_Experiment:
         for flowID, flow in zip(range(len(self.workload.flows)), self.workload.flows):
             host = self.workload.ipHostMap[flow['srcIP']]
             logFile = os.path.expandvars('$CT_EXP_DIR/logs/tcpprobe_{0}.log'.format(host))
-            time, rate = get_tcpprobe_rate(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
+            time, rate, cwnd, srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
             results['rates'].append((time, rate))
             results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
-            time2, cwnd = get_tcpprobe_cwnd(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
-            results['cwnd'].append((time2, cwnd))
+            results['cwnd'].append((time, cwnd))
+            results['srtt'].append((time, srtt))
 
         return results
 
@@ -183,6 +184,7 @@ class CT_Experiment:
 
         self.plotFlowRates(results)
         self.plotCwnd(results) 
+        self.plotSrtt(results) 
         self.plotCTCDF(results)
  
     def plotCTCDF(self, results):
@@ -244,6 +246,27 @@ class CT_Experiment:
         pp.close()
         print "Saved plot: ", plot_filename
         plt.cla()
+
+    def plotSrtt(self, results): 
+        cutoff = 3.0
+        # plot all flow rates on single plot for now
+        for (flowID, (time, srtt)) in zip(range(len(results['srtt'])), results['srtt']):
+            csv_file = self.out_dir + '/flow_{0}_srtt.csv'.format(flowID) 
+            self.recordData(time, srtt, csv_file)
+            t, s = self.cutToTime(time, srtt, cutoff)
+            plt.plot(t, s, label='flow {0}'.format(flowID), marker='o')
+        plt.legend() 
+        plt.title('Smoothed RTT over time')
+        plt.xlabel('time (sec)')
+        plt.ylabel('Smoothed RTT')
+
+        plot_filename = self.out_dir + '/flow_srtt.pdf'
+        pp = PdfPages(plot_filename)
+        pp.savefig()
+        pp.close()
+        print "Saved plot: ", plot_filename
+        plt.cla()
+ 
  
     def cutToTime(self, time, vals, cutoff):
         new_time = [t for t in time if t <= cutoff]

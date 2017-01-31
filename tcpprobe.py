@@ -61,7 +61,7 @@ def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port):
     return results
 
 
-def get_tcpprobe_rate(tcpprobeLog, srcIP, dstIP, port):
+def get_tcpprobe_stats(tcpprobeLog, srcIP, dstIP, port):
     SUMMARY_INTERVALS_PER_SECOND = 1000
     summary = {}
                     
@@ -77,18 +77,23 @@ def get_tcpprobe_rate(tcpprobeLog, srcIP, dstIP, port):
         # get previous statistics
         prev_sent_bytes, prev_acked_bytes = summary.get(t, (0, 0))
         summary[t] = (prev_sent_bytes + sent_bytes, 
-                      prev_acked_bytes + acked_bytes)
+                      prev_acked_bytes + acked_bytes,
+                      cwnd, srtt)
     
     time = []
     rate = []
+    cwnd = []
+    srtt = []
     # write summary
-    for t, (sent_bytes, acked_bytes) in sorted(summary.items()):
+    for t, (sent_bytes, acked_bytes, cwndSamp, srttSamp) in sorted(summary.items()):
         time.append(t)
         interval = 1.0 / SUMMARY_INTERVALS_PER_SECOND
         rate.append(acked_bytes * 8 / (interval * (10.0**9)))
+        cwnd.append(cwndSamp)
+        srtt.append(srttSamp)
     init_time = time[0]
     time = [t - init_time for t in time]
-    return time, rate
+    return time, rate, cwnd, srtt
 
 
 def get_tcpprobe_cwnd(tcpprobeLog, srcIP, dstIP, port):
