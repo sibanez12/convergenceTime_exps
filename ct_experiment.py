@@ -57,7 +57,7 @@ class CT_Experiment:
         p = self.startProcess(write_log_file.format(srcHost))
         self.logging_processes.append((srcHost, p))
     
-        start_iperf_server = 'ssh root@{0} "iperf -s -p %d"' % flow['port']
+        start_iperf_server = 'ssh root@{0} "iperf3 -s -p %d"' % flow['port']
 
         # start iperf server on the destination
         dstHost = flow['dstHost']
@@ -72,7 +72,7 @@ class CT_Experiment:
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
 
-        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf -p {2} -c {3}"')
+        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf3 -p {2} -c {3}"')
 
         # start iperf clients on each src machine
         for flow in self.workload.flows:
