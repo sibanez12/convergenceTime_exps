@@ -11,25 +11,27 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
-import subprocess, shlex, math, sys, os, socket
+import subprocess, shlex, math, sys, os, socket, time
 
 from workload import Workload
 from mp_max_min import MPMaxMin
 from get_ctime import *
 from tcpprobe import *
 
+BUFSIZE = 4096
+
 class CT_Experiment:
 
     """
     starts the rate monitor on each host
-    starts iperf server on each destination machine
+    starts tcp server on each destination machine
     """
     def __init__(self, workload):
 
         self.workload = workload        
         self.logging_processes = []
-        self.iperf_servers = []
-        self.iperf_clients = []
+        self.tcp_servers = []
+        self.tcp_clients = []
 
         kill_logging = 'ssh root@{0} "pkill -u root cat"' 
 
@@ -42,6 +44,8 @@ class CT_Experiment:
 
         for flow in workload.flows:
             self.setupFlow(flow)
+        # sleep to give the servers time to set up
+        time.sleep(2)
  
     def setupFlow(self, flow):
         unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
@@ -57,12 +61,11 @@ class CT_Experiment:
         p = self.startProcess(write_log_file.format(srcHost))
         self.logging_processes.append((srcHost, p))
     
-        start_iperf_server = 'ssh root@{0} "iperf3 -s -p %d"' % flow['port']
+        start_tcp_server = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/run_server.py {1} {2} {3}"'.format(flow['dstHost'], flow['dstIP'], flow['port'], BUFSIZE))
 
-        # start iperf server on the destination
-        dstHost = flow['dstHost']
-        p = self.startProcess(start_iperf_server.format(dstHost))
-        self.iperf_servers.append((dstHost, p))
+        # start tcp server on the destination
+        p = self.startProcess(start_tcp_server)
+        self.tcp_servers.append((flow['dstHost'], p))
 
     """
     get the global start time, distributed to each of the
@@ -72,24 +75,28 @@ class CT_Experiment:
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
 
-        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf3 -p {2} -c {3}"')
+        start_tcp_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/run_client.py {1} {2} {3} {4}"')
 
-        # start iperf clients on each src machine
+        # start tcp clients on each src machine
         for flow in self.workload.flows:
-            command = start_iperf_client.format(flow['srcHost'], expStartTime, flow['port'], flow['dstIP'])
+            command = start_tcp_client.format(flow['srcHost'], flow['dstIP'], flow['port'], BUFSIZE, expStartTime)
             p = self.startProcess(command)
-            self.iperf_clients.append((flow['srcHost'], p))
+            self.tcp_clients.append((flow['srcHost'], p))
 
-        # wait for all iperf clients to finish
-        for (host, iperf_client) in self.iperf_clients:
-            print "Waiting for iperf client on host {0} ...".format(host)
-            iperf_client.wait()
-            print "iperf client on host {0} finished with return code: {1}".format(host, iperf_client.returncode)
+        # wait for all tcp clients to finish
+        for (host, tcp_client) in self.tcp_clients:
+            print "Waiting for tcp client on host {0} ...".format(host)
+            tcp_client.wait()
+            rc = tcp_client.returncode
+            print "tcp client on host {0} finished with return code: {1}".format(host, rc)
+            if rc != 0: 
+                output, error = tcp_client.communicate()
+                print("tcp_client failed %d %s %s" % (p.returncode, output, error))
 
         self.cleanupExperiment()
 
     # kill all tcpprobe logging processes
-    # kill all iperf servers
+    # kill all tcp servers
     # copy all tcpprobe log files to single location
     def cleanupExperiment(self):
 
@@ -101,10 +108,10 @@ class CT_Experiment:
             if rc not in [0,1]:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)
 
-        # kill all iperf servers
-        for (host, server) in self.iperf_servers:
+        # kill all tcp servers
+        for (host, server) in self.tcp_servers:
             server.kill() 
-            command = 'ssh root@{0} "pkill -u root iperf"'.format(host)
+            command = 'ssh root@{0} "pkill -u root python"'.format(host)
             rc = self.runCommand(command) 
             if rc not in [0,1]:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)             
