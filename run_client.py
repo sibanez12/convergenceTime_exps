@@ -9,7 +9,6 @@ def run_client(IP, port, bufSize, msgLen, startTime, duration):
     
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, bufSize)
-    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, "reno")
     s.connect((IP, port))
 
     # keep polling CLOCK_REALTIME until startTime is reached

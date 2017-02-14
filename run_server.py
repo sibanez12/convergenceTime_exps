@@ -8,7 +8,6 @@ def run_server(IP, port, bufSize, msgLen):
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, bufSize)
-    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, "reno")
     s.bind((IP, port))
     s.listen(1) # allow one connection
     
