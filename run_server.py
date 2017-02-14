@@ -24,7 +24,7 @@ def main():
     parser.add_argument('msgLen', type=int, help="the max length of the msgs to receive")
     args = parser.parse_args()
 
-    run_server(args.IP, args.port, args.bufSize, args.msgLen)
+    run_server(args.IP, args.port, args.msgLen)
 
 
 if __name__ == "__main__":
