@@ -11,12 +11,14 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
-import subprocess, shlex, math, sys, os, socket
+import subprocess, shlex, math, sys, os, socket, time
 
 from workload import Workload
 from mp_max_min import MPMaxMin
 from get_ctime import *
 from tcpprobe import *
+
+TCP_VERSION = "reno"
 
 class CT_Experiment:
 
@@ -31,32 +33,28 @@ class CT_Experiment:
         self.iperf_servers = []
         self.iperf_clients = []
 
-        kill_logging = 'ssh root@{0} "pkill -u root cat"' 
+        kill_logging = 'ssh root@{0} "pkill -u root cat"'
+        unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
+        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=0 full=1"' # port=0 means match on all ports
+        log_file = '/tmp/tcpprobe_{0}.log' 
+        write_log_file = 'ssh root@{0} "cat /proc/net/tcpprobe >%s"' % log_file
 
         # kill all currently running logging processes if there are any
         for host in workload.allHosts:
-            command = kill_logging.format(host)
-            rc = self.runCommand(command)
+            rc = self.runCommand(kill_logging.format(host))
             if rc not in [0,1]:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)          
+            self.runCommand(unload_tcp_probe.format(host))
+            self.runCommand(load_tcp_probe.format(host))
+            p = self.startProcess(write_log_file.format(host))
+            self.logging_processes.append((host, p))
 
         for flow in workload.flows:
             self.setupFlow(flow)
- 
-    def setupFlow(self, flow):
-        unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
-#        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=%d full=1"' % flow['port']
-        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=0 full=1"' # port=0 means match on all ports
-        log_file = '/tmp/tcpprobe_{0}.log' 
-        write_log_file = 'ssh root@{0} "cat /proc/net/tcpprobe >%s"' % log_file   
 
-        # load tcp_probe on the source host
-        srcHost = flow['srcHost']
-        self.runCommand(unload_tcp_probe.format(srcHost))
-        self.runCommand(load_tcp_probe.format(srcHost))
-        p = self.startProcess(write_log_file.format(srcHost))
-        self.logging_processes.append((srcHost, p))
-    
+        time.sleep(2) # give the iperf3 servers time to set up
+ 
+    def setupFlow(self, flow):   
         start_iperf_server = 'ssh root@{0} "iperf3 -s -p %d"' % flow['port']
 
         # start iperf server on the destination
@@ -72,11 +70,11 @@ class CT_Experiment:
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
 
-        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf3 -p {2} -c {3}"')
+        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf3 -p {2} --linux-congestion {3} -c {4}"')
 
         # start iperf clients on each src machine
         for flow in self.workload.flows:
-            command = start_iperf_client.format(flow['srcHost'], expStartTime, flow['port'], flow['dstIP'])
+            command = start_iperf_client.format(flow['srcHost'], expStartTime, flow['port'], TCP_VERSION, flow['dstIP'])
             p = self.startProcess(command)
             self.iperf_clients.append((flow['srcHost'], p))
 
@@ -84,7 +82,11 @@ class CT_Experiment:
         for (host, iperf_client) in self.iperf_clients:
             print "Waiting for iperf client on host {0} ...".format(host)
             iperf_client.wait()
-            print "iperf client on host {0} finished with return code: {1}".format(host, iperf_client.returncode)
+            rc = iperf_client.returncode
+            print "iperf client on host {0} finished with return code: {1}".format(host, rc)
+            if rc != 0:
+                output, error = iperf_client.communicate()
+                print("iperf_client failed %s %s" % (output, error))
 
         self.cleanupExperiment()
 
@@ -147,11 +149,12 @@ class CT_Experiment:
         for flowID, flow in zip(range(len(self.workload.flows)), self.workload.flows):
             host = self.workload.ipHostMap[flow['srcIP']]
             logFile = os.path.expandvars('$CT_EXP_DIR/logs/tcpprobe_{0}.log'.format(host))
-            time, rate, cwnd, srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
-            results['rates'].append((time, rate))
-            results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
-            results['cwnd'].append((time, cwnd))
-            results['srtt'].append((time, srtt))
+            time1, rate, _cwnd, _srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
+            time2, cwnd, srtt = get_tcpprobe_cwnd_srtt(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
+            results['rates'].append((time1, rate))
+            results['convTimes'].append(self.getCTtime(time1, rate, idealRates[flowID]))
+            results['cwnd'].append((time2, cwnd))
+            results['srtt'].append((time2, srtt))
 
         return results
 
@@ -181,6 +184,7 @@ class CT_Experiment:
         self.out_dir = os.path.expandvars('$CT_EXP_DIR/out')
         if not os.path.exists(self.out_dir):
             os.makedirs(self.out_dir) 
+        os.system(os.path.expandvars('rm $CT_EXP_DIR/out/*'))
 
         self.plotFlowRates(results)
         self.plotCwnd(results) 
