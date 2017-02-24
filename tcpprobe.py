@@ -62,7 +62,7 @@ def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port):
 
 
 def get_tcpprobe_stats(tcpprobeLog, srcIP, dstIP, port):
-    SUMMARY_INTERVALS_PER_SECOND = 1000
+    SUMMARY_INTERVALS_PER_SECOND = 1000  #1000
     summary = {}
                     
     try:
@@ -96,7 +96,7 @@ def get_tcpprobe_stats(tcpprobeLog, srcIP, dstIP, port):
     return time, rate, cwnd, srtt
 
 
-def get_tcpprobe_cwnd(tcpprobeLog, srcIP, dstIP, port):
+def get_tcpprobe_cwnd_srtt(tcpprobeLog, srcIP, dstIP, port):
     try:
         tuples=parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port)
     except:
@@ -105,12 +105,14 @@ def get_tcpprobe_cwnd(tcpprobeLog, srcIP, dstIP, port):
 
     time = []
     cwnd_vec = []
+    srtt_vec = []
     for src, dst, t, sent_bytes, acked_bytes, cwnd, srtt in tuples:
         time.append(t)
         cwnd_vec.append(cwnd)
+        srtt_vec.append(srtt)
     init_time = time[0]
     time = [t - init_time for t in time]
-    return time, cwnd_vec
+    return time, cwnd_vec, srtt_vec
 
 
 

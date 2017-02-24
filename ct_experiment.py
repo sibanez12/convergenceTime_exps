@@ -18,7 +18,16 @@ from mp_max_min import MPMaxMin
 from get_ctime import *
 from tcpprobe import *
 
-BUFSIZE = 4096
+#BUFSIZE = 2048
+SND_MSG_LEN = 1500*10000
+SND_BUFSIZE = 2**21 #2048 #4096 #262144
+
+RCV_LEN = 4096
+
+DURATION = 10
+CUTOFF = 10
+
+TCP_VERSION = "reno"
 
 class CT_Experiment:
 
@@ -35,33 +44,36 @@ class CT_Experiment:
 
         kill_logging = 'ssh root@{0} "pkill -u root cat"' 
 
-        # kill all currently running logging processes if there are any
-        for host in workload.allHosts:
-            command = kill_logging.format(host)
-            rc = self.runCommand(command)
-            if rc not in [0,1]:
-                print >> sys.stderr, "ERROR: {0} -- failed".format(command)          
-
-        for flow in workload.flows:
-            self.setupFlow(flow)
-        # sleep to give the servers time to set up
-        time.sleep(2)
- 
-    def setupFlow(self, flow):
         unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
-#        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=%d full=1"' % flow['port']
         load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=0 full=1"' # port=0 means match on all ports
         log_file = '/tmp/tcpprobe_{0}.log' 
         write_log_file = 'ssh root@{0} "cat /proc/net/tcpprobe >%s"' % log_file   
 
-        # load tcp_probe on the source host
-        srcHost = flow['srcHost']
-        self.runCommand(unload_tcp_probe.format(srcHost))
-        self.runCommand(load_tcp_probe.format(srcHost))
-        p = self.startProcess(write_log_file.format(srcHost))
-        self.logging_processes.append((srcHost, p))
-    
-        start_tcp_server = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/run_server.py {1} {2} {3}"'.format(flow['dstHost'], flow['dstIP'], flow['port'], BUFSIZE))
+        set_tcp_version = 'ssh root@{0} "echo {1} > /proc/sys/net/ipv4/tcp_congestion_control"'
+
+        for host in workload.allHosts:
+            # kill all currently running logging processes if there are any
+            command = kill_logging.format(host)
+            rc = self.runCommand(command)
+            if rc not in [0,1]:
+                print >> sys.stderr, "ERROR: {0} -- failed".format(command)          
+            
+            # load tcp_probe on the source host
+            self.runCommand(unload_tcp_probe.format(host))
+            self.runCommand(load_tcp_probe.format(host))
+            p = self.startProcess(write_log_file.format(host))
+            self.logging_processes.append((host, p))
+
+            # set TCP congestion control algorithm to use
+            self.runCommand(set_tcp_version.format(host, TCP_VERSION)) 
+
+        for flow in workload.flows:
+            self.setupFlow(flow)
+        # sleep to give the servers time to set up
+        time.sleep(3)
+ 
+    def setupFlow(self, flow):   
+        start_tcp_server = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/run_server.py {1} {2} {3}"'.format(flow['dstHost'], flow['dstIP'], flow['port'], RCV_LEN))
 
         # start tcp server on the destination
         p = self.startProcess(start_tcp_server)
@@ -75,11 +87,11 @@ class CT_Experiment:
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
 
-        start_tcp_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/run_client.py {1} {2} {3} {4}"')
+        start_tcp_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/run_client.py {1} {2} {3} {4} {5} {6}"')
 
         # start tcp clients on each src machine
         for flow in self.workload.flows:
-            command = start_tcp_client.format(flow['srcHost'], flow['dstIP'], flow['port'], BUFSIZE, expStartTime)
+            command = start_tcp_client.format(flow['srcHost'], flow['dstIP'], flow['port'], SND_BUFSIZE, SND_MSG_LEN, expStartTime, DURATION)
             p = self.startProcess(command)
             self.tcp_clients.append((flow['srcHost'], p))
 
@@ -91,7 +103,7 @@ class CT_Experiment:
             print "tcp client on host {0} finished with return code: {1}".format(host, rc)
             if rc != 0: 
                 output, error = tcp_client.communicate()
-                print("tcp_client failed %d %s %s" % (p.returncode, output, error))
+                print("tcp_client failed %s %s" % (output, error))
 
         self.cleanupExperiment()
 
@@ -121,8 +133,8 @@ class CT_Experiment:
         # copy all log files to single location
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        for flow in self.workload.flows:
-            self.runCommand(copy_log_file.format(flow['srcHost'])) 
+        for host in self.workload.allHosts:
+            self.runCommand(copy_log_file.format(host)) 
 
     def runCommand(self, command):
         print "----------------------------------------"
@@ -154,11 +166,12 @@ class CT_Experiment:
         for flowID, flow in zip(range(len(self.workload.flows)), self.workload.flows):
             host = self.workload.ipHostMap[flow['srcIP']]
             logFile = os.path.expandvars('$CT_EXP_DIR/logs/tcpprobe_{0}.log'.format(host))
-            time, rate, cwnd, srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
-            results['rates'].append((time, rate))
-            results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
-            results['cwnd'].append((time, cwnd))
-            results['srtt'].append((time, srtt))
+            time1, rate, _cwnd, _srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
+            time2, cwnd, srtt = get_tcpprobe_cwnd_srtt(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
+            results['rates'].append((time1, rate))
+            results['convTimes'].append(self.getCTtime(time1, rate, idealRates[flowID]))
+            results['cwnd'].append((time2, cwnd))
+            results['srtt'].append((time2, srtt))
 
         return results
 
@@ -188,6 +201,7 @@ class CT_Experiment:
         self.out_dir = os.path.expandvars('$CT_EXP_DIR/out')
         if not os.path.exists(self.out_dir):
             os.makedirs(self.out_dir) 
+        os.system(os.path.expandvars('rm $CT_EXP_DIR/out/*'))
 
         self.plotFlowRates(results)
         self.plotCwnd(results) 
@@ -215,12 +229,12 @@ class CT_Experiment:
         print "Saved plot: ", plot_filename
 
     def plotFlowRates(self, results): 
-        cutoff = 10.0
+        cutoff = CUTOFF
         # plot all flow rates on single plot for now
         for (flowID, (time, rate)) in zip(range(len(results['rates'])), results['rates']):
             csv_file = self.out_dir + '/flow_{0}_rate.csv'.format(flowID) 
-            self.recordData(time, rate, csv_file)
             t, r = self.cutToTime(time, rate, cutoff)
+            self.recordData(t, r, csv_file)
             plt.plot(t, r, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
         plt.title('Flow Rates over time')
@@ -235,12 +249,12 @@ class CT_Experiment:
         plt.cla()
       
     def plotCwnd(self, results): 
-        cutoff = 10.0
+        cutoff = CUTOFF
         # plot all flow rates on single plot for now
         for (flowID, (time, cwnd)) in zip(range(len(results['cwnd'])), results['cwnd']):
             csv_file = self.out_dir + '/flow_{0}_cwnd.csv'.format(flowID) 
-            self.recordData(time, cwnd, csv_file)
             t, c = self.cutToTime(time, cwnd, cutoff)
+            self.recordData(t, c, csv_file)
             plt.plot(t, c, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
         plt.title('Congestion Window over time')
@@ -255,17 +269,17 @@ class CT_Experiment:
         plt.cla()
 
     def plotSrtt(self, results): 
-        cutoff = 10.0
+        cutoff = CUTOFF
         # plot all flow rates on single plot for now
         for (flowID, (time, srtt)) in zip(range(len(results['srtt'])), results['srtt']):
             csv_file = self.out_dir + '/flow_{0}_srtt.csv'.format(flowID) 
-            self.recordData(time, srtt, csv_file)
             t, s = self.cutToTime(time, srtt, cutoff)
+            self.recordData(t, s, csv_file)
             plt.plot(t, s, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
         plt.title('Smoothed RTT over time')
         plt.xlabel('time (sec)')
-        plt.ylabel('Smoothed RTT')
+        plt.ylabel('Smoothed RTT (us)')
 
         plot_filename = self.out_dir + '/flow_srtt.pdf'
         pp = PdfPages(plot_filename)
