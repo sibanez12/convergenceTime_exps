@@ -38,7 +38,7 @@ Specifically for for the TCP experiment:
 
 import argparse
 from workload import Workload
-from ct_experiment import CT_Experiment
+from ct_experiment_iperf import CT_Experiment
 
 def main():
     parser = argparse.ArgumentParser()

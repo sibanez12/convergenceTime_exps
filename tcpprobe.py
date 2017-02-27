@@ -4,7 +4,7 @@ import sys, re
 def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port):
     """
     Processes a tcp probe output file and returns a list of tuples:
-      (src, dst, time, sent_bytes, acked_bytes, cwnd, srtt)
+      (src, dst, time, sent_bytes, acked_bytes, cwnd, srtt, ssthresh, snd_wnd, rcv_wnd)
       
     File looks like this:
 2.088625684 172.31.8.176:48068 172.31.6.120:5100 32 0xdbd7ccfc 0xdbd4eee3 45 45 204032 257 26884
@@ -42,7 +42,11 @@ def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port):
         snd_nxt = int(snd_nxt, 16)
         snd_una = int(snd_una, 16)
         snd_cwnd = int(snd_cwnd)
+        ssthresh = int(ssthresh)
+        snd_wnd = int(snd_wnd)
         srtt = int(srtt)
+        rcv_wnd = int(rcv_wnd)
+        
         
         prev_state = state.get( (src, dst), None )
         if prev_state is not None:
@@ -54,7 +58,7 @@ def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port):
             results.append( (src, dst, prev_t, 
                              (snd_nxt - prev_snd_nxt) & 0xFFFFFFFF,
                              (snd_una - prev_snd_una) & 0xFFFFFFFF, 
-                             snd_cwnd, srtt) )
+                             snd_cwnd, srtt, ssthresh, snd_wnd, rcv_wnd) )
             
         state[ (src, dst) ] = (t, snd_nxt, snd_una)
     
@@ -71,21 +75,21 @@ def get_tcpprobe_stats(tcpprobeLog, srcIP, dstIP, port):
         print >> sys.stderr, "Could not parse: ", tcpprobeLog
         sys.exit(1)   
  
-    for src, dst, t, sent_bytes, acked_bytes, cwnd, srtt in tuples:
+    for src, dst, t, sent_bytes, acked_bytes, cwnd, srtt, ssthresh, snd_wnd, rcv_wnd in tuples:
         # summary interval
         t = int(t * SUMMARY_INTERVALS_PER_SECOND) / float(SUMMARY_INTERVALS_PER_SECOND)
         # get previous statistics
-        prev_sent_bytes, prev_acked_bytes, prev_cwnd, prev_srtt = summary.get(t, (0, 0, 0, 0))
+        prev_sent_bytes, prev_acked_bytes, prev_cwnd, prev_srtt, prev_ssthresh, prev_snd_wnd, prev_rcv_wnd = summary.get(t, (0, 0, 0, 0, 0, 0, 0))
         summary[t] = (prev_sent_bytes + sent_bytes, 
                       prev_acked_bytes + acked_bytes,
-                      cwnd, srtt)
+                      cwnd, srtt, ssthresh, snd_wnd, rcv_wnd)
     
     time = []
     rate = []
     cwnd = []
     srtt = []
     # write summary
-    for t, (sent_bytes, acked_bytes, cwndSamp, srttSamp) in sorted(summary.items()):
+    for t, (sent_bytes, acked_bytes, cwndSamp, srttSamp, ssthreshSamp, snd_wnd_samp, rcv_wnd_samp) in sorted(summary.items()):
         time.append(t)
         interval = 1.0 / SUMMARY_INTERVALS_PER_SECOND
         rate.append(acked_bytes * 8 / (interval * (10.0**9)))
@@ -106,13 +110,19 @@ def get_tcpprobe_cwnd_srtt(tcpprobeLog, srcIP, dstIP, port):
     time = []
     cwnd_vec = []
     srtt_vec = []
-    for src, dst, t, sent_bytes, acked_bytes, cwnd, srtt in tuples:
+    ssthresh_vec = []
+    snd_wnd_vec = []
+    rcv_wnd_vec = []
+    for src, dst, t, sent_bytes, acked_bytes, cwnd, srtt, ssthresh, snd_wnd, rcv_wnd in tuples:
         time.append(t)
         cwnd_vec.append(cwnd)
         srtt_vec.append(srtt)
+        ssthresh_vec.append(ssthresh)
+        snd_wnd_vec.append(snd_wnd)
+        rcv_wnd_vec.append(rcv_wnd)
     init_time = time[0]
     time = [t - init_time for t in time]
-    return time, cwnd_vec, srtt_vec
+    return time, cwnd_vec, srtt_vec, ssthresh_vec, snd_wnd_vec, rcv_wnd_vec 
 
 
 

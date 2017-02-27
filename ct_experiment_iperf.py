@@ -20,6 +20,8 @@ from tcpprobe import *
 
 TCP_VERSION = "reno"
 
+#SOCKET_BUF_SIZE = 6*10**7
+
 class CT_Experiment:
 
     """
@@ -55,7 +57,7 @@ class CT_Experiment:
         time.sleep(2) # give the iperf3 servers time to set up
  
     def setupFlow(self, flow):   
-        start_iperf_server = 'ssh root@{0} "iperf3 -s -p %d"' % flow['port']
+        start_iperf_server = 'ssh root@{0} "iperf3 -s -p %d"' % (flow['port'])
 
         # start iperf server on the destination
         dstHost = flow['dstHost']
@@ -141,6 +143,9 @@ class CT_Experiment:
         results['convTimes'] = []
         results['cwnd'] = [] # entry i is like: (time_i, cwnd_i)
         results['srtt'] = [] # entry i is like: (time_i, srtt_i)
+        results['ssthresh'] = [] # entry i is like: (time_i, ssthresh_i)
+        results['snd_wnd'] = [] # entry i is like: (time_i, snd_wnd_i)
+        results['rcv_wnd'] = [] # entry i is like: (time_i, rcv_wnd_i)
         # calculate the ideal rates for the particular workload
         wf = MPMaxMin(self.workload)       
         idealRates = wf.maxmin_x
@@ -150,11 +155,14 @@ class CT_Experiment:
             host = self.workload.ipHostMap[flow['srcIP']]
             logFile = os.path.expandvars('$CT_EXP_DIR/logs/tcpprobe_{0}.log'.format(host))
             time1, rate, _cwnd, _srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
-            time2, cwnd, srtt = get_tcpprobe_cwnd_srtt(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
+            time2, cwnd, srtt, ssthresh, snd_wnd, rcv_wnd = get_tcpprobe_cwnd_srtt(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
             results['rates'].append((time1, rate))
             results['convTimes'].append(self.getCTtime(time1, rate, idealRates[flowID]))
             results['cwnd'].append((time2, cwnd))
             results['srtt'].append((time2, srtt))
+            results['ssthresh'].append((time2, ssthresh))
+            results['snd_wnd'].append((time2, snd_wnd))
+            results['rcv_wnd'].append((time2, rcv_wnd))
 
         return results
 
@@ -190,6 +198,9 @@ class CT_Experiment:
         self.plotCwnd(results) 
         self.plotSrtt(results) 
         self.plotCTCDF(results)
+        self.plotSsthresh(results) 
+        self.plotSnd_wnd(results) 
+        self.plotRcv_wnd(results) 
  
     def plotCTCDF(self, results):
         # plot the CDF of convergence times for each flow
@@ -237,19 +248,19 @@ class CT_Experiment:
         for (flowID, (time, cwnd)) in zip(range(len(results['cwnd'])), results['cwnd']):
             csv_file = self.out_dir + '/flow_{0}_cwnd.csv'.format(flowID) 
             self.recordData(time, cwnd, csv_file)
-            t, c = self.cutToTime(time, cwnd, cutoff)
-            plt.plot(t, c, label='flow {0}'.format(flowID), marker='o')
-        plt.legend() 
-        plt.title('Congestion Window over time')
-        plt.xlabel('time (sec)')
-        plt.ylabel('congestion window')
-
-        plot_filename = self.out_dir + '/flow_cwnd.pdf'
-        pp = PdfPages(plot_filename)
-        pp.savefig()
-        pp.close()
-        print "Saved plot: ", plot_filename
-        plt.cla()
+#            t, c = self.cutToTime(time, cwnd, cutoff)
+#            plt.plot(t, c, label='flow {0}'.format(flowID), marker='o')
+#        plt.legend() 
+#        plt.title('Congestion Window over time')
+#        plt.xlabel('time (sec)')
+#        plt.ylabel('congestion window')
+#
+#        plot_filename = self.out_dir + '/flow_cwnd.pdf'
+#        pp = PdfPages(plot_filename)
+#        pp.savefig()
+#        pp.close()
+#        print "Saved plot: ", plot_filename
+#        plt.cla()
 
     def plotSrtt(self, results): 
         cutoff = 10.0
@@ -257,21 +268,81 @@ class CT_Experiment:
         for (flowID, (time, srtt)) in zip(range(len(results['srtt'])), results['srtt']):
             csv_file = self.out_dir + '/flow_{0}_srtt.csv'.format(flowID) 
             self.recordData(time, srtt, csv_file)
-            t, s = self.cutToTime(time, srtt, cutoff)
-            plt.plot(t, s, label='flow {0}'.format(flowID), marker='o')
-        plt.legend() 
-        plt.title('Smoothed RTT over time')
-        plt.xlabel('time (sec)')
-        plt.ylabel('Smoothed RTT')
+#            t, s = self.cutToTime(time, srtt, cutoff)
+#            plt.plot(t, s, label='flow {0}'.format(flowID), marker='o')
+#        plt.legend() 
+#        plt.title('Smoothed RTT over time')
+#        plt.xlabel('time (sec)')
+#        plt.ylabel('Smoothed RTT')
+#
+#        plot_filename = self.out_dir + '/flow_srtt.pdf'
+#        pp = PdfPages(plot_filename)
+#        pp.savefig()
+#        pp.close()
+#        print "Saved plot: ", plot_filename
+#        plt.cla()
 
-        plot_filename = self.out_dir + '/flow_srtt.pdf'
-        pp = PdfPages(plot_filename)
-        pp.savefig()
-        pp.close()
-        print "Saved plot: ", plot_filename
-        plt.cla()
+    def plotSsthresh(self, results): 
+        cutoff = 10.0
+        # plot all flow rates on single plot for now
+        for (flowID, (time, ssthresh)) in zip(range(len(results['ssthresh'])), results['ssthresh']):
+            csv_file = self.out_dir + '/flow_{0}_ssthresh.csv'.format(flowID) 
+            self.recordData(time, ssthresh, csv_file)
+#            t, s = self.cutToTime(time, ssthresh, cutoff)
+#            plt.plot(t, s, label='flow {0}'.format(flowID), marker='o')
+#        plt.legend() 
+#        plt.title('Slow Start Threshhold over time')
+#        plt.xlabel('time (sec)')
+#        plt.ylabel('SS Thresh (MSS)')
+#
+#        plot_filename = self.out_dir + '/flow_ssthresh.pdf'
+#        pp = PdfPages(plot_filename)
+#        pp.savefig()
+#        pp.close()
+#        print "Saved plot: ", plot_filename
+#        plt.cla()
  
- 
+    def plotSnd_wnd(self, results): 
+        cutoff = 10.0
+        # plot all flow rates on single plot for now
+        for (flowID, (time, snd_wnd)) in zip(range(len(results['snd_wnd'])), results['snd_wnd']):
+            csv_file = self.out_dir + '/flow_{0}_snd_wnd.csv'.format(flowID) 
+            self.recordData(time, snd_wnd, csv_file)
+#            t, s = self.cutToTime(time, snd_wnd, cutoff)
+#            plt.plot(t, s, label='flow {0}'.format(flowID), marker='o')
+#        plt.legend() 
+#        plt.title('Send Window over time')
+#        plt.xlabel('time (sec)')
+#        plt.ylabel('send window (MSS)')
+#
+#        plot_filename = self.out_dir + '/flow_snd_wnd.pdf'
+#        pp = PdfPages(plot_filename)
+#        pp.savefig()
+#        pp.close()
+#        print "Saved plot: ", plot_filename
+#        plt.cla()
+
+    def plotRcv_wnd(self, results): 
+        cutoff = 10.0
+        # plot all flow rates on single plot for now
+        for (flowID, (time, rcv_wnd)) in zip(range(len(results['rcv_wnd'])), results['rcv_wnd']):
+            csv_file = self.out_dir + '/flow_{0}_rcv_wnd.csv'.format(flowID) 
+            self.recordData(time, rcv_wnd, csv_file)
+#            t, r = self.cutToTime(time, rcv_wnd, cutoff)
+#            plt.plot(t, r, label='flow {0}'.format(flowID), marker='o')
+#        plt.legend() 
+#        plt.title('Receive Window over time')
+#        plt.xlabel('time (sec)')
+#        plt.ylabel('Receive Window (MSS)')
+#
+#        plot_filename = self.out_dir + '/flow_rcv_wnd.pdf'
+#        pp = PdfPages(plot_filename)
+#        pp.savefig()
+#        pp.close()
+#        print "Saved plot: ", plot_filename
+#        plt.cla()
+
+
     def cutToTime(self, time, vals, cutoff):
         new_time = [t for t in time if t <= cutoff]
         new_vals = [v for (v,t) in zip(vals, time) if t <= cutoff]
