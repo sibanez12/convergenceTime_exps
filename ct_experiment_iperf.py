@@ -20,7 +20,7 @@ from tcpprobe import *
 
 TCP_VERSION = "reno"
 
-#SOCKET_BUF_SIZE = 6*10**7
+#WINDOW_SIZE = 1000
 
 class CT_Experiment:
 
