@@ -76,7 +76,7 @@ class CT_Experiment:
 
         # start iperf clients on each src machine
         for flow in self.workload.flows:
-            command = start_iperf_client.format(flow['srcHost'], expStartTime, flow['port'], flow['dstIP'])
+            command = start_iperf_client.format(flow['srcHost'], expStartTime + flow['startTime'], flow['port'], flow['dstIP'])
             p = self.startProcess(command)
             self.iperf_clients.append((flow['srcHost'], p))
 
@@ -104,7 +104,7 @@ class CT_Experiment:
         # kill all iperf servers
         for (host, server) in self.iperf_servers:
             server.kill() 
-            command = 'ssh root@{0} "pkill -u root iperf"'.format(host)
+            command = 'ssh root@{0} "pkill -u root iperf3"'.format(host)
             rc = self.runCommand(command) 
             if rc not in [0,1]:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)             
@@ -149,7 +149,7 @@ class CT_Experiment:
             logFile = os.path.expandvars('$CT_EXP_DIR/logs/tcpprobe_{0}.log'.format(host))
             time, rate, cwnd, srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
             results['rates'].append((time, rate))
-            results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
+#            results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
             results['cwnd'].append((time, cwnd))
             results['srtt'].append((time, srtt))
 
@@ -185,7 +185,7 @@ class CT_Experiment:
         self.plotFlowRates(results)
         self.plotCwnd(results) 
         self.plotSrtt(results) 
-        self.plotCTCDF(results)
+#        self.plotCTCDF(results)
  
     def plotCTCDF(self, results):
         # plot the CDF of convergence times for each flow
@@ -213,8 +213,8 @@ class CT_Experiment:
         for (flowID, (time, rate)) in zip(range(len(results['rates'])), results['rates']):
             csv_file = self.out_dir + '/flow_{0}_rate.csv'.format(flowID) 
             self.recordData(time, rate, csv_file)
-            t, r = self.cutToTime(time, rate, cutoff)
-            plt.plot(t, r, label='flow {0}'.format(flowID), marker='o')
+            #time, rate = self.cutToTime(time, rate, cutoff)
+            plt.plot(time, rate, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
         plt.title('Flow Rates over time')
         plt.xlabel('time (sec)')
@@ -233,8 +233,8 @@ class CT_Experiment:
         for (flowID, (time, cwnd)) in zip(range(len(results['cwnd'])), results['cwnd']):
             csv_file = self.out_dir + '/flow_{0}_cwnd.csv'.format(flowID) 
             self.recordData(time, cwnd, csv_file)
-            t, c = self.cutToTime(time, cwnd, cutoff)
-            plt.plot(t, c, label='flow {0}'.format(flowID), marker='o')
+            #time, cwnd = self.cutToTime(time, cwnd, cutoff)
+            plt.plot(time, cwnd, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
         plt.title('Congestion Window over time')
         plt.xlabel('time (sec)')
@@ -253,8 +253,8 @@ class CT_Experiment:
         for (flowID, (time, srtt)) in zip(range(len(results['srtt'])), results['srtt']):
             csv_file = self.out_dir + '/flow_{0}_srtt.csv'.format(flowID) 
             self.recordData(time, srtt, csv_file)
-            t, s = self.cutToTime(time, srtt, cutoff)
-            plt.plot(t, s, label='flow {0}'.format(flowID), marker='o')
+            #time, srtt = self.cutToTime(time, srtt, cutoff)
+            plt.plot(time, srtt, label='flow {0}'.format(flowID), marker='o')
         plt.legend() 
         plt.title('Smoothed RTT over time')
         plt.xlabel('time (sec)')

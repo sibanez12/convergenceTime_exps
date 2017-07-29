@@ -1,6 +1,6 @@
 
 """
-This parses the input flows.csv file into a Workload
+This parses the input flows.txt file into a Workload
 object that is used by other parts of the infrastructure
 to setup and run the experiments
 """
@@ -15,7 +15,8 @@ class Workload:
     def __init__(self, flowsFile):
         self.numLinksFormat = r'num_links: ([\d]*)'
         self.linkCapFormat = r'link_capacities \(Gbps\): ([\d]*)'
-        self.flowFormat = r'(?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
+        self.deltaFormat = r'delta \(sec\): ([\d\.]*)'
+        self.flowFormat = r'(?P<startTime>[\d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
         self.ipHostMap = ipHostMap.ipHostMap
         
         # self.flows is a list with entries of the form: 
@@ -23,6 +24,7 @@ class Workload:
         self.flows = []
         self.numLinks = None
         self.linkCap = None
+        self.delta = None
         self.numFlows = None
         self.srcs = None
         self.dsts = None
@@ -50,6 +52,14 @@ class Workload:
                 print >> sys.stderr, "ERROR: link_capacities not specified in flowsFile"
                 sys.exit(1)
 
+            # set self.delta
+            searchObj = re.search(self.deltaFormat, doc)
+            if searchObj is not None:
+                self.delta = float(searchObj.group(1))
+            else:
+                print >> sys.stderr, "ERROR: delta not specified in flowsFile"
+                sys.exit(1)
+
             #  set self.flows        
             searchObj = re.search(self.flowFormat, doc)
             while searchObj is not None:
@@ -69,5 +79,6 @@ class Workload:
             flow['port'] = BASE_PORT + i
             flow['srcHost'] = self.ipHostMap[flow['srcIP']]
             flow['dstHost'] = self.ipHostMap[flow['dstIP']]
+            flow['startTime'] = int(flow['startTime'])
   
 
