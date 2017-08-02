@@ -15,7 +15,6 @@ class Workload:
     def __init__(self, flowsFile):
         self.numLinksFormat = r'num_links: ([\d]*)'
         self.linkCapFormat = r'link_capacities \(Gbps\): ([\d]*)'
-        self.deltaFormat = r'delta \(sec\): ([\d\.]*)'
         self.flowFormat = r'(?P<startTime>[\d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
         self.ipHostMap = ipHostMap.ipHostMap
         
@@ -24,7 +23,6 @@ class Workload:
         self.flows = []
         self.numLinks = None
         self.linkCap = None
-        self.delta = None
         self.numFlows = None
         self.srcs = None
         self.dsts = None
@@ -50,14 +48,6 @@ class Workload:
                 self.linkCap = int(searchObj.group(1))
             else:
                 print >> sys.stderr, "ERROR: link_capacities not specified in flowsFile"
-                sys.exit(1)
-
-            # set self.delta
-            searchObj = re.search(self.deltaFormat, doc)
-            if searchObj is not None:
-                self.delta = float(searchObj.group(1))
-            else:
-                print >> sys.stderr, "ERROR: delta not specified in flowsFile"
                 sys.exit(1)
 
             #  set self.flows        

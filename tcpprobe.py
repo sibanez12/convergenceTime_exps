@@ -91,8 +91,9 @@ def get_tcpprobe_stats(tcpprobeLog, srcIP, dstIP, port):
         rate.append(acked_bytes * 8 / (interval * (10.0**9)))
         cwnd.append(cwndSamp)
         srtt.append(srttSamp)
-    init_time = time[0]
-    time = [t - init_time for t in time]
+#    # normalize time
+#    init_time = time[0]
+#    time = [t - init_time for t in time]
     return time, rate, cwnd, srtt
 
 
