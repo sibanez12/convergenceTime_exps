@@ -40,21 +40,24 @@ class CT_Experiment:
             if rc not in [0,1]:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)          
 
+        currTime = get_real_time()
+        startLogTime = int(math.floor(currTime + 3)) # start logging on all machines at the same time so kernel time stamps line up
         for flow in workload.flows:
-            self.setupFlow(flow)
+            self.setupFlow(flow, startLogTime)
  
-    def setupFlow(self, flow):
+    def setupFlow(self, flow, startLogTime):
         unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
 #        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=%d full=1"' % flow['port']
         load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=0 full=1"' # port=0 means match on all ports
         log_file = '/tmp/tcpprobe_{0}.log' 
-        write_log_file = 'ssh root@{0} "cat /proc/net/tcpprobe >%s"' % log_file   
+#        write_log_file = 'ssh root@{0} "cat /proc/net/tcpprobe >%s"' % log_file
+        write_log_file = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /bin/cat /proc/net/tcpprobe >%s"' % log_file)
 
         # load tcp_probe on the source host
         srcHost = flow['srcHost']
         self.runCommand(unload_tcp_probe.format(srcHost))
         self.runCommand(load_tcp_probe.format(srcHost))
-        p = self.startProcess(write_log_file.format(srcHost))
+        p = self.startProcess(write_log_file.format(srcHost, startLogTime))
         self.logging_processes.append((srcHost, p))
     
         start_iperf_server = 'ssh root@{0} "iperf3 -s -p %d"' % flow['port']
@@ -72,11 +75,11 @@ class CT_Experiment:
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
 
-        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf3 -p {2} -c {3}"')
+        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf3 -p {2} -c {3} -t {4}"')
 
         # start iperf clients on each src machine
         for flow in self.workload.flows:
-            command = start_iperf_client.format(flow['srcHost'], expStartTime + flow['startTime'], flow['port'], flow['dstIP'])
+            command = start_iperf_client.format(flow['srcHost'], expStartTime + flow['startTime'], flow['port'], flow['dstIP'], flow['duration'])
             p = self.startProcess(command)
             self.iperf_clients.append((flow['srcHost'], p))
 

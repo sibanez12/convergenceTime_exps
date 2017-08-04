@@ -15,7 +15,7 @@ class Workload:
     def __init__(self, flowsFile):
         self.numLinksFormat = r'num_links: ([\d]*)'
         self.linkCapFormat = r'link_capacities \(Gbps\): ([\d]*)'
-        self.flowFormat = r'(?P<startTime>[\d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
+        self.flowFormat = r'(?P<startTime>[\d]*),(?P<duration>[\d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
         self.ipHostMap = ipHostMap.ipHostMap
         
         # self.flows is a list with entries of the form: 
@@ -70,5 +70,6 @@ class Workload:
             flow['srcHost'] = self.ipHostMap[flow['srcIP']]
             flow['dstHost'] = self.ipHostMap[flow['dstIP']]
             flow['startTime'] = int(flow['startTime'])
+            flow['duration'] = int(flow['duration'])
   
 
