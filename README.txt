@@ -16,3 +16,5 @@ Setup:
 
 3. Ensure PTP is synchronizing the system clock of the machines
 
+4. Add ipHostMap.py file which maps IP addresses to the host names on which they reside
+

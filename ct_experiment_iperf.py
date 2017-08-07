@@ -18,6 +18,9 @@ from mp_max_min import MPMaxMin
 from get_ctime import *
 from tcpprobe import *
 
+LOGGING_START_TIME = 10
+EXP_START_TIME = 12
+
 class CT_Experiment:
 
     """
@@ -41,7 +44,7 @@ class CT_Experiment:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)          
 
         currTime = get_real_time()
-        startLogTime = int(math.floor(currTime + 3)) # start logging on all machines at the same time so kernel time stamps line up
+        startLogTime = int(math.floor(currTime + LOGGING_START_TIME)) # start logging on all machines at the same time so kernel time stamps line up
         for host in workload.srcHosts:
             self.setupSrcHost(host, startLogTime)
 
@@ -78,7 +81,7 @@ class CT_Experiment:
     """
     def runExperiment(self):
         currTime = get_real_time()
-        expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
+        expStartTime = int(math.floor(currTime + EXP_START_TIME)) # start the experiment EXP_START_TIME seconds from now
 
         start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf3 -p {2} -c {3} -t {4}"')
 
@@ -110,8 +113,7 @@ class CT_Experiment:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)
 
         # kill all iperf servers
-        for (host, server) in self.iperf_servers:
-            server.kill() 
+        for host in self.workload.dstHosts:
             command = 'ssh root@{0} "pkill -u root iperf3"'.format(host)
             rc = self.runCommand(command) 
             if rc not in [0,1]:
@@ -122,8 +124,8 @@ class CT_Experiment:
         # copy all log files to single location
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        for flow in self.workload.flows:
-            self.runCommand(copy_log_file.format(flow['srcHost'])) 
+        for host in self.workload.srcHosts:
+            self.runCommand(copy_log_file.format(host)) 
 
     def runCommand(self, command):
         print "----------------------------------------"
