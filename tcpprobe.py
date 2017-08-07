@@ -62,7 +62,7 @@ def parse_tcpprobe_file(tcpprobeLog, srcIP, dstIP, port):
 
 
 def get_tcpprobe_stats(tcpprobeLog, srcIP, dstIP, port):
-    SUMMARY_INTERVALS_PER_SECOND = 1000
+    SUMMARY_INTERVALS_PER_SECOND = 50
     summary = {}
                     
     try:

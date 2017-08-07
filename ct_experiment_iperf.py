@@ -42,10 +42,14 @@ class CT_Experiment:
 
         currTime = get_real_time()
         startLogTime = int(math.floor(currTime + 3)) # start logging on all machines at the same time so kernel time stamps line up
+        for host in workload.srcHosts:
+            self.setupSrcHost(host, startLogTime)
+
         for flow in workload.flows:
-            self.setupFlow(flow, startLogTime)
- 
-    def setupFlow(self, flow, startLogTime):
+            self.setupFlow(flow)
+
+    def setupSrcHost(self, srcHost, startLogTime):
+        delete_log = 'ssh root@{0} "rm -f /tmp/tcpprobe_*"'
         unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
 #        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=%d full=1"' % flow['port']
         load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=0 full=1"' # port=0 means match on all ports
@@ -54,12 +58,13 @@ class CT_Experiment:
         write_log_file = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /bin/cat /proc/net/tcpprobe >%s"' % log_file)
 
         # load tcp_probe on the source host
-        srcHost = flow['srcHost']
+        self.runCommand(delete_log.format(srcHost))
         self.runCommand(unload_tcp_probe.format(srcHost))
         self.runCommand(load_tcp_probe.format(srcHost))
         p = self.startProcess(write_log_file.format(srcHost, startLogTime))
         self.logging_processes.append((srcHost, p))
-    
+ 
+    def setupFlow(self, flow):
         start_iperf_server = 'ssh root@{0} "iperf3 -s -p %d"' % flow['port']
 
         # start iperf server on the destination
@@ -218,7 +223,7 @@ class CT_Experiment:
             self.recordData(time, rate, csv_file)
             #time, rate = self.cutToTime(time, rate, cutoff)
             plt.plot(time, rate, label='flow {0}'.format(flowID), marker='o')
-        plt.legend() 
+        plt.legend(loc='lower right') 
         plt.title('Flow Rates over time')
         plt.xlabel('time (sec)')
         plt.ylabel('rate (Gbps)')
