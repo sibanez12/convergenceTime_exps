@@ -16,7 +16,10 @@ import subprocess, shlex, math, sys, os, socket
 from workload import Workload
 from mp_max_min import MPMaxMin
 from get_ctime import *
-from tcpprobe import *
+from ip_info import ip_info
+from plot_log import read_pcap_pkts, make_plots
+
+LOGGING_IFACE = ('han-3.stanford.edu', 'eth4')
 
 class CT_Experiment:
 
@@ -24,46 +27,68 @@ class CT_Experiment:
     starts the rate monitor on each host
     starts iperf server on each destination machine
     """
-    def __init__(self, workload):
+    def __init__(self, workload, config_hosts):
 
         self.workload = workload        
-        self.logging_processes = []
         self.iperf_servers = []
         self.iperf_clients = []
 
-        kill_logging = 'ssh root@{0} "pkill -u root cat"' 
-
-        # kill all currently running logging processes if there are any
-        for host in workload.allHosts:
-            command = kill_logging.format(host)
-            rc = self.runCommand(command)
-            if rc not in [0,1]:
-                print >> sys.stderr, "ERROR: {0} -- failed".format(command)          
+        if (config_hosts):
+            self.config_hosts()
 
         currTime = get_real_time()
-        startLogTime = int(math.floor(currTime + 3)) # start logging on all machines at the same time so kernel time stamps line up
-        for host in workload.srcHosts:
-            self.setupSrcHost(host, startLogTime)
+        self.startLogging() 
 
         for flow in workload.flows:
             self.setupFlow(flow)
 
-    def setupSrcHost(self, srcHost, startLogTime):
-        delete_log = 'ssh root@{0} "rm -f /tmp/tcpprobe_*"'
-        unload_tcp_probe = 'ssh root@{0} "modprobe -r tcp_probe"'
-#        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=%d full=1"' % flow['port']
-        load_tcp_probe = 'ssh root@{0} "modprobe tcp_probe port=0 full=1"' # port=0 means match on all ports
-        log_file = '/tmp/tcpprobe_{0}.log' 
-#        write_log_file = 'ssh root@{0} "cat /proc/net/tcpprobe >%s"' % log_file
-        write_log_file = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /bin/cat /proc/net/tcpprobe >%s"' % log_file)
+    """
+    Add the necessary routes to the linux routing tables and add populate the ARP table entries
+    """
+    def config_hosts(self):
+        add_ip = 'ssh root@{0} "ifconfig {0} {1} netmask 255.255.255.0"'
+        for IP in self.workload.allIPs:
+            command = add_ip.format(ip_info[IP]['hostname'], ip_info[IP]['iface'], IP)
+            rc = self.runCommand(command)
+            if rc != 0:
+                print >> sys.stderr, "ERROR: {0} -- failed".format(command)
 
-        # load tcp_probe on the source host
-        self.runCommand(delete_log.format(srcHost))
-        self.runCommand(unload_tcp_probe.format(srcHost))
-        self.runCommand(load_tcp_probe.format(srcHost))
-        p = self.startProcess(write_log_file.format(srcHost, startLogTime))
-        self.logging_processes.append((srcHost, p))
- 
+            other_IPs = [x for x in self.workload.allIPs if x != IP]
+            self.add_routes(IP, otherIPs)
+
+    def add_routes(self, thisIP, otherIPs):
+        add_route = 'ssh root@{0} "ip route add {1} dev {2}"'
+        add_arp = 'ssh root@{0} "arp -i {1} -s {2} {3}"'
+        thisHost = ip_info[thisIP]['hostname']
+        thisIface = ip_info[thisIP]['iface']
+        for otherIP in otherIPs:
+            command = add_route.format(thisHost, otherIP, thisIface)
+            rc = self.runCommand(command)
+            if rc != 0:
+                print >> sys.stderr, "ERROR: {0} -- failed".format(command)
+
+            otherMAC = ip_info[otherIP]['mac']
+            command = add_arp.format(thisHost, thisIface, otherIP, otherMAC) 
+            rc = self.runCommand(command)
+            if rc != 0:
+                print >> sys.stderr, "ERROR: {0} -- failed".format(command)
+
+
+    """
+    Start capturing the logged packets
+    """
+    def startLogging(self):
+        start_tcpdump = 'ssh root@{0} "tcpdump -i {1} -w /tmp/exp_log.pcap"'
+
+        # start logging
+        log_host = LOGGING_IFACE[0]
+        log_iface = LOGGING_IFACE[1]
+        p = self.startProcess(start_tcpdump.format(log_host, log_iface))
+        self.logging_processes.append((log_host, p))
+
+    """
+    Start the iperf servers
+    """
     def setupFlow(self, flow):
         start_iperf_server = 'ssh root@{0} "iperf3 -s -p %d"' % flow['port']
 
@@ -96,15 +121,14 @@ class CT_Experiment:
 
         self.cleanupExperiment()
 
-    # kill all tcpprobe logging processes
+    # kill all tcpdump logging processes
     # kill all iperf servers
-    # copy all tcpprobe log files to single location
     def cleanupExperiment(self):
 
         # kill all tcpprobe logging processes
         for (host, log_process) in self.logging_processes:
             log_process.kill() 
-            command = 'ssh root@{0} "pkill -u root cat"'.format(host) 
+            command = 'ssh root@{0} "pkill -u root tcpdump"'.format(host) 
             rc = self.runCommand(command) 
             if rc not in [0,1]:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)
@@ -118,12 +142,12 @@ class CT_Experiment:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)             
 
         log_dir = os.path.expandvars('$CT_EXP_DIR/logs/')
-        copy_log_file = 'scp root@{0}:~/../tmp/tcpprobe_* %s' % log_dir
-        # copy all log files to single location
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        for flow in self.workload.flows:
-            self.runCommand(copy_log_file.format(flow['srcHost'])) 
+        copy_log_file = 'scp root@{0}:/tmp/exp_log.pcap %s' % log_dir
+        os.system(os.expandvars('rm -rf $CT_EXP_DIR/logs/'))
+        os.makedirs(log_dir)
+        # copy the log file
+        log_host = LOGGING_IFACE[0] 
+        self.runCommand(copy_log_file.format(log_host)) 
 
     def runCommand(self, command):
         print "----------------------------------------"
@@ -139,29 +163,29 @@ class CT_Experiment:
         print "----------------------------------------"
         return subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT) 
    
-    # parse the tcpprobe log files in $CT_EXP_DIR/logs to determine
-    #   convergence time of each flow 
-    def getResults(self):
-        results = {}
-        results['rates'] = [] # entry i is like: (time_i, rate_i)
-        results['convTimes'] = []
-        results['cwnd'] = [] # entry i is like: (time_i, cwnd_i)
-        results['srtt'] = [] # entry i is like: (time_i, srtt_i)
-        # calculate the ideal rates for the particular workload
-        wf = MPMaxMin(self.workload)       
-        idealRates = wf.maxmin_x
-       
-        # get the rates and convergence times of each flow
-        for flowID, flow in zip(range(len(self.workload.flows)), self.workload.flows):
-            host = self.workload.ipHostMap[flow['srcIP']]
-            logFile = os.path.expandvars('$CT_EXP_DIR/logs/tcpprobe_{0}.log'.format(host))
-            time, rate, cwnd, srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
-            results['rates'].append((time, rate))
-#            results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
-            results['cwnd'].append((time, cwnd))
-            results['srtt'].append((time, srtt))
-
-        return results
+#    # parse the tcpprobe log files in $CT_EXP_DIR/logs to determine
+#    #   convergence time of each flow 
+#    def getResults(self):
+#        results = {}
+#        results['rates'] = [] # entry i is like: (time_i, rate_i)
+#        results['convTimes'] = []
+#        results['cwnd'] = [] # entry i is like: (time_i, cwnd_i)
+#        results['srtt'] = [] # entry i is like: (time_i, srtt_i)
+#        # calculate the ideal rates for the particular workload
+#        wf = MPMaxMin(self.workload)       
+#        idealRates = wf.maxmin_x
+#       
+#        # get the rates and convergence times of each flow
+#        for flowID, flow in zip(range(len(self.workload.flows)), self.workload.flows):
+#            host = self.workload.ipHostMap[flow['srcIP']]
+#            logFile = os.path.expandvars('$CT_EXP_DIR/logs/tcpprobe_{0}.log'.format(host))
+#            time, rate, cwnd, srtt = get_tcpprobe_stats(logFile, flow['srcIP'], flow['dstIP'], flow['port'])
+#            results['rates'].append((time, rate))
+##            results['convTimes'].append(self.getCTtime(time, rate, idealRates[flowID]))
+#            results['cwnd'].append((time, cwnd))
+#            results['srtt'].append((time, srtt))
+#
+#        return results
 
     """
     Determine how long it takes for rate to converge to idealRate.
@@ -184,16 +208,13 @@ class CT_Experiment:
                  numConverged = 0
         return -1 # failed to converge
 
+    """
+    Create the result plots from the logged pkts
+    """
     def reportResults(self, results):
-
-        self.out_dir = os.path.expandvars('$CT_EXP_DIR/out')
-        if not os.path.exists(self.out_dir):
-            os.makedirs(self.out_dir) 
-
-        self.plotFlowRates(results)
-        self.plotCwnd(results) 
-        self.plotSrtt(results) 
-#        self.plotCTCDF(results)
+        log_file = os.path.expandvars('$CT_EXP_DIR/logs/exp_log.pcap')
+        read_pcap_pkts(log_file)
+        make_plots(True, True, True)
  
     def plotCTCDF(self, results):
         # plot the CDF of convergence times for each flow
