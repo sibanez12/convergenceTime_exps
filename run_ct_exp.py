@@ -60,7 +60,7 @@ def main():
 #    # results to determine the convergence times
 #    results = exp.getResults()
 
-#    exp.reportResults(results)
+#    exp.reportResults()
 
 if __name__ == "__main__":
     main()

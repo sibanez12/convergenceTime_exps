@@ -13,9 +13,10 @@ BASE_PORT = 915
 class Workload:
     
     def __init__(self, flowsFile):
+        self.flowsFile = flowsFile
         self.numLinksFormat = r'num_links: ([\d]*)'
         self.linkCapFormat = r'link_capacities \(Gbps\): ([\d]*)'
-        self.flowFormat = r'(?P<startTime>[\d]*),(?P<duration>[\d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
+        self.flowFormat = r'(?P<startTime>[\d\.]*),(?P<duration>[\d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
         self.ip_info = ip_info 
         
         # self.flows is a list with entries of the form: 
@@ -69,7 +70,7 @@ class Workload:
             flow['port'] = BASE_PORT + i
             flow['srcHost'] = self.ip_info[flow['srcIP']]['hostname']
             flow['dstHost'] = self.ip_info[flow['dstIP']]['hostname']
-            flow['startTime'] = int(flow['startTime'])
+            flow['startTime'] = float(flow['startTime'])
             flow['duration'] = int(flow['duration'])
   
 

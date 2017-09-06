@@ -6,10 +6,10 @@ This file defines the top level functions:
 (3) reportResults
 """
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
+#import matplotlib
+#matplotlib.use('Agg')
+#import matplotlib.pyplot as plt
+#from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
 import subprocess, shlex, math, sys, os, socket
 
@@ -17,9 +17,9 @@ from workload import Workload
 from mp_max_min import MPMaxMin
 from get_ctime import *
 from ip_info import ip_info
-from plot_log import read_pcap_pkts, make_plots
+from plot_log import read_pcap_pkts, calc_flow_stats, make_plots
 
-LOGGING_IFACE = ('han-3.stanford.edu', 'eth4')
+LOGGING_IFACE = ('han-5.stanford.edu', 'eth3')
 
 class CT_Experiment:
 
@@ -32,6 +32,7 @@ class CT_Experiment:
         self.workload = workload        
         self.iperf_servers = []
         self.iperf_clients = []
+        self.logging_processes = []
 
         if (config_hosts):
             self.config_hosts()
@@ -46,14 +47,14 @@ class CT_Experiment:
     Add the necessary routes to the linux routing tables and add populate the ARP table entries
     """
     def config_hosts(self):
-        add_ip = 'ssh root@{0} "ifconfig {0} {1} netmask 255.255.255.0"'
+        add_ip = 'ssh root@{0} "ifconfig {1} {2} netmask 255.255.255.0"'
         for IP in self.workload.allIPs:
             command = add_ip.format(ip_info[IP]['hostname'], ip_info[IP]['iface'], IP)
             rc = self.runCommand(command)
             if rc != 0:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)
 
-            other_IPs = [x for x in self.workload.allIPs if x != IP]
+            otherIPs = [x for x in self.workload.allIPs if x != IP]
             self.add_routes(IP, otherIPs)
 
     def add_routes(self, thisIP, otherIPs):
@@ -83,6 +84,7 @@ class CT_Experiment:
         # start logging
         log_host = LOGGING_IFACE[0]
         log_iface = LOGGING_IFACE[1]
+        os.system('ssh root@{0} "ifup eth4"')
         p = self.startProcess(start_tcpdump.format(log_host, log_iface))
         self.logging_processes.append((log_host, p))
 
@@ -105,11 +107,14 @@ class CT_Experiment:
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
 
-        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} /usr/bin/iperf3 -p {2} -c {3} -t {4}"')
+        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} {2} /usr/bin/iperf3 -p {3} -c {4} -t {5} -C reno"')
 
         # start iperf clients on each src machine
         for flow in self.workload.flows:
-            command = start_iperf_client.format(flow['srcHost'], expStartTime + flow['startTime'], flow['port'], flow['dstIP'], flow['duration'])
+            startTime = expStartTime + flow['startTime']
+            startTime_sec = int(startTime)
+            startTime_nsec = (startTime - int(startTime))*(10**9)
+            command = start_iperf_client.format(flow['srcHost'], startTime_sec, startTime_nsec, flow['port'], flow['dstIP'], flow['duration'])
             p = self.startProcess(command)
             self.iperf_clients.append((flow['srcHost'], p))
 
@@ -143,11 +148,13 @@ class CT_Experiment:
 
         log_dir = os.path.expandvars('$CT_EXP_DIR/logs/')
         copy_log_file = 'scp root@{0}:/tmp/exp_log.pcap %s' % log_dir
-        os.system(os.expandvars('rm -rf $CT_EXP_DIR/logs/'))
+        os.system(os.path.expandvars('rm -rf $CT_EXP_DIR/logs/'))
         os.makedirs(log_dir)
         # copy the log file
         log_host = LOGGING_IFACE[0] 
         self.runCommand(copy_log_file.format(log_host)) 
+        # copy the workload file into the log directory
+        os.system('cp {} {}'.format(self.workload.flowsFile, log_dir))
 
     def runCommand(self, command):
         print "----------------------------------------"
@@ -211,10 +218,12 @@ class CT_Experiment:
     """
     Create the result plots from the logged pkts
     """
-    def reportResults(self, results):
+    def reportResults(self):
         log_file = os.path.expandvars('$CT_EXP_DIR/logs/exp_log.pcap')
         read_pcap_pkts(log_file)
+        calc_flow_stats()
         make_plots(True, True, True)
+        
  
     def plotCTCDF(self, results):
         # plot the CDF of convergence times for each flow
