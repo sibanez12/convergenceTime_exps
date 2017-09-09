@@ -19,7 +19,8 @@ from get_ctime import *
 from ip_info import ip_info
 from plot_log import read_pcap_pkts, calc_flow_stats, make_plots
 
-LOGGING_IFACE = ('han-5.stanford.edu', 'eth3')
+LOGGING_IFACES = [('han-2.stanford.edu', 'eth3'), ('han-3.stanford.edu', 'eth4'), ('han-5.stanford.edu', 'eth3')]
+#LOGGING_IFACE = ('han-2.stanford.edu', 'eth3')
 
 class CT_Experiment:
 
@@ -79,14 +80,12 @@ class CT_Experiment:
     Start capturing the logged packets
     """
     def startLogging(self):
-        start_tcpdump = 'ssh root@{0} "tcpdump -i {1} -w /tmp/exp_log.pcap"'
+        start_tcpdump = 'ssh root@{0} "tcpdump -i {1} -w /tmp/exp_log_{0}.pcap"'
 
         # start logging
-        log_host = LOGGING_IFACE[0]
-        log_iface = LOGGING_IFACE[1]
-        os.system('ssh root@{0} "ifup eth4"')
-        p = self.startProcess(start_tcpdump.format(log_host, log_iface))
-        self.logging_processes.append((log_host, p))
+        for (host, iface) in LOGGING_IFACES:
+            p = self.startProcess(start_tcpdump.format(host, iface))
+            self.logging_processes.append((host, p))
 
     """
     Start the iperf servers
@@ -113,7 +112,7 @@ class CT_Experiment:
         for flow in self.workload.flows:
             startTime = expStartTime + flow['startTime']
             startTime_sec = int(startTime)
-            startTime_nsec = (startTime - int(startTime))*(10**9)
+            startTime_nsec = int((startTime - int(startTime))*(10**9))
             command = start_iperf_client.format(flow['srcHost'], startTime_sec, startTime_nsec, flow['port'], flow['dstIP'], flow['duration'])
             p = self.startProcess(command)
             self.iperf_clients.append((flow['srcHost'], p))
@@ -146,13 +145,15 @@ class CT_Experiment:
             if rc not in [0,1]:
                 print >> sys.stderr, "ERROR: {0} -- failed".format(command)             
 
+        # copy log files
         log_dir = os.path.expandvars('$CT_EXP_DIR/logs/')
-        copy_log_file = 'scp root@{0}:/tmp/exp_log.pcap %s' % log_dir
+        copy_log_file = 'scp root@{0}:/tmp/exp_log_{0}.pcap %s' % log_dir
         os.system(os.path.expandvars('rm -rf $CT_EXP_DIR/logs/'))
         os.makedirs(log_dir)
         # copy the log file
-        log_host = LOGGING_IFACE[0] 
-        self.runCommand(copy_log_file.format(log_host)) 
+        for (host, iface) in LOGGING_IFACES:
+            self.runCommand(copy_log_file.format(host)) 
+
         # copy the workload file into the log directory
         os.system('cp {} {}'.format(self.workload.flowsFile, log_dir))
 

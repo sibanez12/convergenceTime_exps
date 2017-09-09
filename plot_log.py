@@ -5,7 +5,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import sys, os, re, argparse
 from collections import OrderedDict
-import pandas, re, csv, struct, socket
+import re, csv, struct, socket
 from scapy_patch import rdpcap_raw
 from workload import Workload
 from mp_max_min import MPMaxMin
@@ -13,6 +13,13 @@ from mp_max_min import MPMaxMin
 flowTimes = OrderedDict()
 flowSeqNos = OrderedDict()
 flowPktSizes = OrderedDict()
+
+q_sizes = OrderedDict() # indexed by queue number
+q_sizes[0] = []
+q_sizes[1] = []
+q_sizes[2] = []
+q_sizes[3] = []
+q_size_time = []
 
 flowAvgTimes = OrderedDict()
 flowRates = OrderedDict()
@@ -56,9 +63,13 @@ def read_pcap_pkts(pcap_file):
                 dst_port = struct.unpack(">H", pkt[36:38])[0]
                 seqNo = struct.unpack(">L", pkt[38:42])[0]
                 timestamp = struct.unpack(">Q", pkt[54:62])[0]
+                nf0_q_size = struct.unpack("<H", pkt[62:64])[0]
+                nf1_q_size = struct.unpack("<H", pkt[64:66])[0]
+                nf2_q_size = struct.unpack("<H", pkt[66:68])[0]
+                nf3_q_size = struct.unpack("<H", pkt[68:70])[0]
                 f.write ('{},{},{},{},{},{},{},{}\n'.format(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp))
                 if proto == TCP_PROTO:
-                    log_pkt(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp) 
+                    log_pkt(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp, nf0_q_size, nf1_q_size, nf2_q_size, nf3_q_size) 
             except struct.error as e:
 #                print >> sys.stderr, "WARNING: could not unpack packet to obtain all fields"
                 pass
@@ -67,11 +78,16 @@ def read_csv_pkts(csv_file):
     with open(csv_file, 'rb') as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
-            log_pkt(int(row[0]), int(row[1]), row[2], row[3], int(row[4]), int(row[5]), int(row[6]), int(row[7]))
+            log_pkt(int(row[0]), int(row[1]), row[2], row[3], int(row[4]), int(row[5]), int(row[6]), int(row[7]), int(row[8]), int(row[9]), int(row[10]), int(row[11]))
 
-def log_pkt(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp):
+def log_pkt(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp, nf0_q_size, nf1_q_size, nf2_q_size, nf3_q_size):
     flowID = (src_ip, dst_ip, proto, src_port, dst_port)
     if dst_port >= BASE_PORT and dst_port <= BASE_PORT + MAX_NUM_FLOWS:
+        q_sizes[0].append(nf0_q_size*32.0) # bytes
+        q_sizes[1].append(nf1_q_size*32.0) # bytes
+        q_sizes[2].append(nf2_q_size*32.0) # bytes
+        q_sizes[3].append(nf3_q_size*32.0) # bytes
+        q_size_time.append(timestamp*5.0)
         if flowID not in flowTimes.keys():
             initSeqNos[flowID] = seqNo
             flowTimes[flowID] = [timestamp*5.0]
@@ -81,29 +97,6 @@ def log_pkt(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp)
             flowTimes[flowID].append(timestamp*5.0)
             flowSeqNos[flowID].append(seqNo - initSeqNos[flowID])
             flowPktSizes[flowID].append(ip_len - HEADER_SIZE)
-
-#def get_flow_info(log_file):
-#    logged_pkts = rdpcap(log_file)
-#    for pkt in logged_pkts:
-#        if TCP in pkt:
-#            flowID = (pkt[IP].src, pkt[IP].dst, pkt[IP].proto, pkt.sport, pkt.dport) # flowID = 5-tuple 
-#            if flowID not in flowTimes.keys():
-#                initSeqNos[flowID] = pkt.seq
-#                try:
-#                    timestamp = struct.unpack(">Q", pkt.load[0:8])[0]
-#                    flowTimes[flowID] = [timestamp*5.0]
-#                    flowSeqNos[flowID] = [0]
-#                    flowPktSizes[flowID] = [pkt[IP].len - HEADER_SIZE]
-#                except struct.error as e:
-#                    print "ERROR: could not unpack load: ", pkt.load[0:8]
-#            else:
-#                try:
-#                    timestamp = struct.unpack(">Q", pkt.load[0:8])[0]
-#                    flowTimes[flowID].append(timestamp*5.0)
-#                    flowSeqNos[flowID].append(pkt.seq - initSeqNos[flowID])
-#                    flowPktSizes[flowID].append(pkt[IP].len - HEADER_SIZE)
-#                except struct.error as e:
-#                    print "ERROR: could not unpack load: ", pkt.load[0:8]                
 
 def calc_flow_stats():
     for flowID in flowTimes.keys():
@@ -271,6 +264,25 @@ def get_rate_samples(index):
             rate_samps[flow_num] = flowRates[flow_tuple][index]
     return (time_samps, rate_samps)
 
+def plot_q_data(nf0, nf1, nf2, nf3):
+    fig_handle =  plt.figure()
+
+    if (nf0):
+        plt.plot(q_size_time, q_sizes[0], label='nf0', marker='o')
+    if (nf1):
+        plt.plot(q_size_time, q_sizes[1], label='nf1', marker='o')
+    if (nf2):
+        plt.plot(q_size_time, q_sizes[2], label='nf2', marker='o')
+    if (nf3):
+        plt.plot(q_size_time, q_sizes[3], label='nf3', marker='o')
+
+    plt.subplots_adjust(right=0.9)    
+    plt.legend(bbox_to_anchor=(1.01,1), loc="upper left")
+    plt.title('Output Queue Sizes over time')
+    plt.xlabel('time (ns)')
+    plt.ylabel('Queue Size (B)')
+
+
 def plot_flow_data(time_data, flow_data, title, y_label, y_lim=None):
     global CTime, CT_start, CT_end
 
@@ -283,13 +295,14 @@ def plot_flow_data(time_data, flow_data, title, y_label, y_lim=None):
     for flowID in flow_data.keys():
         times = time_data[flowID]
         y_vals = flow_data[flowID]
-        plt.plot(times, y_vals, label='flow {0}'.format(flowID), marker='o')
+        plt.plot(times, y_vals, label='({}, {})'.format(flowID[0],flowID[1]), marker='o')
 
     if (CT_start is not None and CT_end is not None):
         plt.axvline(x=CT_start, color='r', linestyle='--')
         plt.axvline(x=CT_end, color='r', linestyle='--')
-    
-    plt.legend()
+
+    plt.subplots_adjust(right=0.7)    
+    plt.legend(bbox_to_anchor=(1.01,1), loc="upper left")
     plt.title(title)
     plt.xlabel('time (ns)')
     plt.ylabel(y_label)
@@ -297,23 +310,21 @@ def plot_flow_data(time_data, flow_data, title, y_label, y_lim=None):
         axes = plt.gca()
         axes.set_ylim(y_lim)
 
-def make_plots(seq, rate, goodput):
+def make_plots(seq, rate, goodput, nf0, nf1, nf2, nf3):
     if (seq):
-        print "plotting SeqNos..."
         plot_flow_data(flowTimes, flowSeqNos, 'Flow Sequence Numbers over time', 'SeqNo')
     if (rate):
-        print "plotting Rates..."
         plot_flow_data(flowAvgTimes, flowRates, 'Avg Flow Rates (avg interval = {} sec)'.format(RATE_AVG_INTERVAL), 'Rate (Gbps)')
     if (goodput):
-        print "plotting Goodputs..."
         plot_flow_data(flowAvgTimes, flowGoodputs, 'Avg Goodputs (avg interval = {} sec)'.format(RATE_AVG_INTERVAL), 'Goodput (Gbps)')
+    if (nf0 or nf1 or nf2 or nf3):
+        plot_q_data(nf0, nf1, nf2, nf3)
 
     font = {'family' : 'normal',
             'weight' : 'bold',
             'size'   : 22}
     matplotlib.rc('font', **font)
 
-    print "showing plots..."
     plt.show()
 
 def main():
@@ -321,6 +332,10 @@ def main():
     parser.add_argument('--seq', action='store_true', default=False, help='plot the seqNos of each flow')
     parser.add_argument('--rate', action='store_true', default=False, help='plot the avg rate of each flow')
     parser.add_argument('--goodput', action='store_true', default=False, help='plot the avg goodput of each flow')
+    parser.add_argument('--nf0', action='store_true', default=False, help='plot size of nf0 output queue over time')
+    parser.add_argument('--nf1', action='store_true', default=False, help='plot size of nf1 output queue over time')
+    parser.add_argument('--nf2', action='store_true', default=False, help='plot size of nf2 output queue over time')
+    parser.add_argument('--nf3', action='store_true', default=False, help='plot size of nf3 output queue over time')
     parser.add_argument('--workload', type=str, default="", help="the file that specifies the workload that was run to produce these results")
     parser.add_argument('logged_pkts', type=str, help="the pcap file that contains all of the logged control packets from the switch")
     args = parser.parse_args()
@@ -336,7 +351,7 @@ def main():
     calc_flow_stats()
     if (args.workload != ""):
         log_CT(args.workload) 
-    make_plots(args.seq, args.rate, args.goodput)
+    make_plots(args.seq, args.rate, args.goodput, args.nf0, args.nf1, args.nf2, args.nf3)
 
 
 if __name__ == "__main__":
