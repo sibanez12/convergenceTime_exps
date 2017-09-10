@@ -19,7 +19,7 @@ from get_ctime import *
 from ip_info import ip_info
 from plot_log import read_pcap_pkts, calc_flow_stats, make_plots
 
-LOGGING_IFACES = [('han-2.stanford.edu', 'eth3'), ('han-3.stanford.edu', 'eth4'), ('han-5.stanford.edu', 'eth3')]
+LOGGING_IFACES = [('han-1.stanford.edu', 'eth3'), ('han-3.stanford.edu', 'eth6'), ('han-5.stanford.edu', 'eth5')]
 #LOGGING_IFACE = ('han-2.stanford.edu', 'eth3')
 
 class CT_Experiment:
