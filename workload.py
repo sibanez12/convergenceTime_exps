@@ -16,7 +16,7 @@ class Workload:
         self.flowsFile = flowsFile
         self.numLinksFormat = r'num_links: ([\d]*)'
         self.linkCapFormat = r'link_capacities \(Gbps\): ([\d]*)'
-        self.flowFormat = r'(?P<startTime>[ \d\.]*),(?P<duration>[ \d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
+        self.flowFormat = r'(?P<startTime>[ \d\.]*),(?P<duration>[ \d]*),(?P<numConn>[ \d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
         self.ip_info = ip_info 
         
         # self.flows is a list with entries of the form: 
@@ -31,6 +31,7 @@ class Workload:
         self.allHosts = None
         self.srcHosts = None
         self.dstHosts = None
+        self.max_flow_dur = 0
     
         # parse the flowsFile
         with open(flowsFile) as f:
@@ -71,6 +72,8 @@ class Workload:
             flow['srcHost'] = self.ip_info[flow['srcIP']]['hostname']
             flow['dstHost'] = self.ip_info[flow['dstIP']]['hostname']
             flow['startTime'] = float(flow['startTime'])
-            flow['duration'] = int(flow['duration'])
-  
+            flow['numConn'] = int(flow['numConn'])
+            dur = int(flow['duration'])
+            flow['duration'] = dur
+            self.max_flow_dur = dur if (dur > self.max_flow_dur) else self.max_flow_dur 
 
