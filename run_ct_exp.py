@@ -42,7 +42,7 @@ from ct_experiment_perc import CT_Experiment
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', action='store_true', default=False, help='configure the host interfaces by adding the necessary routes and populating the ARP tables')
+#    parser.add_argument('--config', action='store_true', default=False, help='configure the host interfaces by adding the necessary routes and populating the ARP tables')
     parser.add_argument('flowsFile', type=str, help="the txt file that contains the flows to run in the experiment")
     args = parser.parse_args()
 
@@ -50,7 +50,7 @@ def main():
 
     # starts the rate monitor on each host
     # starts iperf server on each destination machine
-    exp = CT_Experiment(workload, args.config)
+    exp = CT_Experiment(workload)
     
     # get the global start time, distributed to each of the
     # required hosts, and run the experiment 

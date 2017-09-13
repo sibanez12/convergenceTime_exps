@@ -8,8 +8,6 @@ to setup and run the experiments
 import sys, os, re
 from ip_info import ip_info
 
-BASE_PORT = 915
-
 class Workload:
     
     def __init__(self, flowsFile):
@@ -62,18 +60,32 @@ class Workload:
         self.srcs = [flow['srcIP'] for flow in self.flows]
         self.dsts = [flow['dstIP'] for flow in self.flows]
         self.allIPs = self.srcs + list(set(self.dsts) - set(self.srcs))
-        self.allHosts = list(set([self.ip_info[IP]['hostname'] for IP in self.allIPs]))
+        allHosts = list(set([self.ip_info[IP]['hostname'] for IP in self.allIPs]))
         self.srcHosts = list(set([self.ip_info[IP]['hostname'] for IP in self.srcs]))
         self.dstHosts = list(set([self.ip_info[IP]['hostname'] for IP in self.dsts]))
         self.numFlows = len(self.flows)
+        offset_id = 1
         for i, flow in zip(range(len(self.flows)), self.flows):
+            flow['offset_id'] = offset_id
             flow['links'] = map(int, flow['links'].split(','))
-            flow['port'] = BASE_PORT + i
             flow['srcHost'] = self.ip_info[flow['srcIP']]['hostname']
             flow['dstHost'] = self.ip_info[flow['dstIP']]['hostname']
             flow['startTime'] = float(flow['startTime'])
-            flow['numConn'] = int(flow['numConn'])
+            numConn = int(flow['numConn'])
+            flow['numConn'] = numConn
+            offset_id += numConn 
             dur = int(flow['duration'])
             flow['duration'] = dur
             self.max_flow_dur = dur if (dur > self.max_flow_dur) else self.max_flow_dur 
+
+        self.allHosts = {}
+        for host in allHosts:
+            host_dict = {}
+            if host in self.srcHosts:
+                host_flows = [flow for flow in self.flows if flow['srcHost'] == host]
+                assert(len(host_flows) == 1)
+                host_dict['flow'] = host_flows[0] # only support one "flow" per host for now
+            else:
+                host_dict['flow'] = None
+            self.allHosts[host] = host_dict
 

@@ -1,6 +1,8 @@
+#!/usr/bin/env python
 
 __all__ = ["get_real_time"]
 
+import argparse
 import ctypes, os
 
 CLOCK_REALTIME = 0 # see <linux/time.h>
@@ -21,4 +23,13 @@ def get_real_time():
         errno_ = ctypes.get_errno()
         raise OSError(errno_, os.strerror(errno_))
     return t.tv_sec + t.tv_nsec * 1e-9
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--offset', type=int, default=0, help="get system clock time [offset] seconds into the future")
+    args = parser.parse_args()
+    print get_real_time() + args.offset
+
+if __name__ == "__main__":
+    main()
 

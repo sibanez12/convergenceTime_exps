@@ -11,7 +11,7 @@ This file defines the top level functions:
 #import matplotlib.pyplot as plt
 #from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
-import subprocess, shlex, math, sys, os, socket, time
+import subprocess, math, sys, os, socket, time
 
 from workload import Workload
 from mp_max_min import MPMaxMin
@@ -19,14 +19,13 @@ from get_ctime import *
 from ip_info import ip_info
 from plot_log import read_pcap_pkts, calc_flow_stats, make_plots
 
-LOGGING_IFACES = [('han-2.stanford.edu', 'eth3'), ('han-3.stanford.edu', 'eth4'), ('han-5.stanford.edu', 'eth3')]
+LOGGING_IFACES = ['han-1.stanford.edu', 'han-3.stanford.edu', 'han-5.stanford.edu']
 
 # wait this long after starting up perc application before sending first packets
 # so that the destination has a chance to set up first
 START_DELAY = 3 # seconds
 WAIT_TO_KILL = 2
 
-LOG_FILE = "/tmp/perc_log.pcap"
 LOGGING_THREADS = 1
 
 class CT_Experiment:
@@ -75,19 +74,32 @@ class CT_Experiment:
     def runExperiment(self):
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
-
-        start_perc_app = os.path.expandvars('ssh root@{} "$CT_EXP_DIR/exec_at {} {} $MOONGEN_DIR/build/libmoon $MOONGEN_DIR/examples/test_perc_control.lua 0 1 -d {} -s {} -n {} -t {} -o {} -w {} -c {} -f {}"')
-
-        # start perc applications on each machine 
-        for flow in self.workload.flows:
-            startTime = expStartTime + flow['startTime']
-            startTime_sec = int(startTime)
-            startTime_nsec = int((startTime - int(startTime))*(10**9))
-            dst_mac = ip_info[flow['dstIP']]['mac']
-            src_mac = ip_info[flow['srcIP']]['mac']
-            command = start_perc_app.format(flow['srcHost'], startTime_sec, startTime_nsec, dst_mac, src_mac, flow['numConn'], flow['duration'], flow['offset_ID'], START_DELAY)
-            p = self.startProcess(command)
-            self.perc_apps.append((flow['srcHost'], p))
+        
+        # start the perc applications
+        for host, host_dict in self.workload.allHosts.items():
+            flow = host_dict['flow']
+            if flow is not None:
+                # this host is the source of a flow
+                start_perc_app = os.path.expandvars('ssh root@{} "$CT_EXP_DIR/exec_at {} {} $MOONGEN_DIR/build/libmoon $MOONGEN_DIR/examples/test_perc_control.lua -d {} -s {} -n {} -t {} -o {} -w {} -c {} -f {} 0 {}" > {}')
+                startTime = expStartTime + flow['startTime']
+                startTime_sec = int(startTime)
+                startTime_nsec = int((startTime - int(startTime))*(10**9))
+                dst_mac = ip_info[flow['dstIP']]['mac']
+                src_mac = ip_info[flow['srcIP']]['mac']
+                log_port = '1' if host in LOGGING_IFACES else ''
+                command = start_perc_app.format(host, startTime_sec, startTime_nsec, dst_mac, src_mac, flow['numConn'], flow['duration'], flow['offset_id'], START_DELAY, LOGGING_THREADS, '/tmp/perc-log-{}.pcap'.format(host), log_port, 'logs/{}-perc-app.out'.format(host))
+                p = self.startProcess(command)
+                self.perc_apps.append((host, p)) 
+            else:
+                # this host is not the source of any flows
+                start_perc_app = os.path.expandvars('ssh root@{} "$CT_EXP_DIR/exec_at {} {} $MOONGEN_DIR/build/libmoon $MOONGEN_DIR/examples/test_perc_control.lua -n 0 -w {} -c {} -f {} 0 {}" > {}')
+                startTime = expStartTime 
+                startTime_sec = int(startTime)
+                startTime_nsec = int((startTime - int(startTime))*(10**9))
+                log_port = '1' if host in LOGGING_IFACES else ''
+                command = start_perc_app.format(host, startTime_sec, startTime_nsec, START_DELAY, LOGGING_THREADS, '/tmp/perc-log-{}.pcap'.format(host), log_port, 'logs/{}-perc-app.out'.format(host))
+                p = self.startProcess(command)
+                self.perc_apps.append((host, p))
 
         # wait for all flows to complete
         currTime = get_real_time()
@@ -125,11 +137,11 @@ class CT_Experiment:
 
         # copy log files
         log_dir = os.path.expandvars('$CT_EXP_DIR/logs/')
-        copy_log_file = 'scp root@{0}:/tmp/exp_log_{0}.pcap %s' % log_dir
+        copy_log_file = 'scp root@{0}:/tmp/perc-log*{0}.pcap %s' % log_dir
         os.system(os.path.expandvars('rm -rf $CT_EXP_DIR/logs/'))
         os.makedirs(log_dir)
         # copy the log file
-        for (host, iface) in LOGGING_IFACES:
+        for host in LOGGING_IFACES:
             self.runCommand(copy_log_file.format(host)) 
 
         # copy the workload file into the log directory
@@ -147,7 +159,7 @@ class CT_Experiment:
         print "Starting Process:\n"
         print "-->$ ", command
         print "----------------------------------------"
-        return subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT) 
+        return subprocess.Popen(command, shell=True) 
    
 #    # parse the tcpprobe log files in $CT_EXP_DIR/logs to determine
 #    #   convergence time of each flow 
