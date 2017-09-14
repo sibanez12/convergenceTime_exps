@@ -51,6 +51,9 @@ flowRs = OrderedDict()
 flowAvgTimes = OrderedDict()
 flowRates = OrderedDict()
 
+PlotLineDic = {}
+onpick_count = 0
+
 OUT_DIR = ""
 
 CONVERGENCE_THRESH = 0.40
@@ -82,6 +85,7 @@ def read_pcap_pkts(pcap_file):
             etherType = struct.unpack(">H", pkt[12:14])[0] 
             if etherType == PERC_CONTROL:
                 flowID = struct.unpack(">I", pkt[14:18])[0]
+                leave = struct.unpack(">B", pkt[18])[0]
                 demand = struct.unpack(">I", pkt[22:26])[0]
                 timestamp = struct.unpack(">Q", pkt[27:35])[0]
                 label_0 = struct.unpack(">B", pkt[35])[0]
@@ -96,7 +100,7 @@ def read_pcap_pkts(pcap_file):
                 numSat = struct.unpack(">I", pkt[62:66])[0]
                 maxSat = struct.unpack(">I", pkt[66:70])[0]
                 R = struct.unpack(">I", pkt[70:74])[0]
-                log_ctrl_pkt(flowID, demand, timestamp, label_0, label_1, label_2, alloc_0, alloc_1, alloc_2, linkCap, sumSat, numFlows, numSat, maxSat, R)
+                log_ctrl_pkt(flowID, leave, demand, timestamp, label_0, label_1, label_2, alloc_0, alloc_1, alloc_2, linkCap, sumSat, numFlows, numSat, maxSat, R)
             elif etherType == PERC_DATA:
                 flowID = struct.unpack(">I", pkt[14:18])[0]
                 seqNo = struct.unpack(">I", pkt[22:26])[0]
@@ -115,7 +119,7 @@ def read_pcap_pkts(pcap_file):
             print >> sys.stderr, "WARNING: could not unpack packet to obtain all fields"
             pass
 
-def log_ctrl_pkt(flowID, demand, timestamp, label_0, label_1, label_2, alloc_0, alloc_1, alloc_2, linkCap, sumSat, numFlows, numSat, maxSat, R):
+def log_ctrl_pkt(flowID, leave, demand, timestamp, label_0, label_1, label_2, alloc_0, alloc_1, alloc_2, linkCap, sumSat, numFlows, numSat, maxSat, R):
     if flowID not in flowCtrlTimes.keys():
         flowCtrlTimes[flowID] = [timestamp*5.0]
         flowDemands[flowID] = [(float(demand)/LINK_CAP)*MAX_RATE]
@@ -138,14 +142,17 @@ def log_ctrl_pkt(flowID, demand, timestamp, label_0, label_1, label_2, alloc_0, 
         flowAllocs[1][flowID].append((float(alloc_1)/LINK_CAP)*MAX_RATE)
         flowAllocs[2][flowID].append((float(alloc_2)/LINK_CAP)*MAX_RATE)
         flowLabels[0][flowID].append(label_0)
-        flowLabels[1][flowID].append(label_0)
-        flowLabels[2][flowID].append(label_0)
+        flowLabels[1][flowID].append(label_1)
+        flowLabels[2][flowID].append(label_2)
         flowLinkCaps[flowID].append((float(linkCap)/LINK_CAP)*MAX_RATE)
         flowSumSats[flowID].append((float(sumSat)/LINK_CAP)*MAX_RATE)
         flowNumFlows[flowID].append(numFlows)
         flowNumSats[flowID].append(numSat)
         flowNewMaxSats[flowID].append((float(maxSat)/LINK_CAP)*MAX_RATE)
         flowRs[flowID].append((float(R)/LINK_CAP)*MAX_RATE)
+    if leave == 1:
+        print "Leave pkt detected: flow {}".format(flowID)
+
 
 def log_data_pkt(flowID, seqNo, nf0_data_q_size, nf1_data_q_size, nf2_data_q_size, nf3_data_q_size,
                  nf0_ctrl_q_size, nf1_ctrl_q_size, nf2_ctrl_q_size, nf3_ctrl_q_size, timestamp):
@@ -180,6 +187,10 @@ def report_rtt():
         print "\tavg_diff = ", avg_diff, " (ns)"
         plot_cdf(diff, 'CDF of time diff between ctrl pkts', 'time (ns)', 'CDF', 'flow {}'.format(flowID))
 
+#    for flowID, times in flowAvgTimes.items():
+#        print "flow {}:".format(flowID)
+#        print "\ttimes = ", times[0:10]
+
     axes = plt.gca()
     axes.set_ylim([0,1.2])
 
@@ -202,7 +213,7 @@ def calc_flow_stats():
             (time_vals, rate_vals, num_retrans) = results 
             flowAvgTimes[flowID] = time_vals
             flowRates[flowID] = rate_vals
-            print "flow: ", str(flowID), " num_retransmissions = ", num_retrans 
+#            print "flow: ", str(flowID), " num_retransmissions = ", num_retrans 
         else:
             del flowDataTimes[flowID]
             del flowSeqNos[flowID]
@@ -391,25 +402,28 @@ def plot_ctrl_q_data(args):
 
 
 def plot_flow_data(time_data, flow_data, title, y_label, filename, y_lim=None):
-    global CTime, CT_start, CT_end
+    global CTime, CT_start, CT_end, PlotLineDic
 
     fig_handle =  plt.figure()
+    PlotLineDic[fig_handle.canvas] = {}
 
     if (CTime is not None):
         title += ' (convergence time = {} ms)'.format(CTime*(10**-6))
- 
+
+    lines = [] 
     # plot the results
     for flowID in flow_data.keys():
         times = time_data[flowID]
         y_vals = flow_data[flowID]
-        plt.plot(times, y_vals, label='flow {}'.format(flowID)) #, marker='o')
+        line, = plt.plot(times, y_vals, label='flow {}'.format(flowID), marker='o')
+        lines.append(line)
 
     if (CT_start is not None and CT_end is not None):
         plt.axvline(x=CT_start, color='r', linestyle='--')
         plt.axvline(x=CT_end, color='r', linestyle='--')
 
     plt.subplots_adjust(right=0.7)    
-    plt.legend(bbox_to_anchor=(1.01,1), loc="upper left")
+    leg = plt.legend(bbox_to_anchor=(1.01,1), loc="upper left")
     plt.title(title)
     plt.xlabel('time (ns)')
     plt.ylabel(y_label)
@@ -417,9 +431,33 @@ def plot_flow_data(time_data, flow_data, title, y_label, filename, y_lim=None):
         axes = plt.gca()
         axes.set_ylim(y_lim)
 
+    for legline, origline in zip(leg.get_lines(), lines):
+        legline.set_picker(5)  # 5 pts tolerance
+        PlotLineDic[fig_handle.canvas][legline] = origline
+
+    fig_handle.canvas.mpl_connect('pick_event', onpick)
+
     global OUT_DIR
     if OUT_DIR != "":
         save_plot(filename, OUT_DIR)
+
+def onpick(event):
+    global onpick_count, PlotLineDic
+    if onpick_count % 2 == 0:
+        # on the pick event, find the orig line corresponding to the
+        # legend proxy line, and toggle the visibility
+        legline = event.artist
+        origline = PlotLineDic[event.canvas][legline]
+        vis = not origline.get_visible()
+        origline.set_visible(vis)
+        # Change the alpha on the line in the legend so we can see what lines
+        # have been toggled
+        if vis:
+            legline.set_alpha(1.0)
+        else:
+            legline.set_alpha(0.2)
+        event.canvas.draw()
+    onpick_count += 1
 
 def save_plot(filename, out_dir):
     if not os.path.exists(out_dir):
@@ -512,10 +550,11 @@ def main():
     OUT_DIR = args.out
 
     read_pcap_pkts(args.logged_pkts)
+    calc_flow_stats()
+
     if (args.rtt):
         report_rtt()
 
-    calc_flow_stats()
     if (args.workload != ""):
         log_CT(args.workload) 
     make_plots(args=args)
