@@ -2,7 +2,9 @@
 
 import numpy as np
 import matplotlib
-import matplotlib.pyplot as plt, mpld3
+import matplotlib.pyplot as plt
+import mpld3
+from mpld3 import plugins
 from matplotlib.backends.backend_pdf import PdfPages
 import sys, os, re, argparse
 from collections import OrderedDict
@@ -52,6 +54,7 @@ flowAvgTimes = OrderedDict()
 flowRates = OrderedDict()
 
 PlotLineDic = {}
+vlineDic = {}
 onpick_count = 0
 
 OUT_DIR = ""
@@ -401,21 +404,23 @@ def plot_ctrl_q_data(args):
     plt.ylabel('Queue Size (B)')
 
 
-def plot_flow_data(time_data, flow_data, title, y_label, filename, y_lim=None):
+def plot_flow_data(time_data, flow_data, title, y_label, filename, y_lim=None, lines=False):
     global CTime, CT_start, CT_end, PlotLineDic
 
     fig_handle =  plt.figure()
+    fig_handle.canvas.set_window_title(filename)
     PlotLineDic[fig_handle.canvas] = {}
 
     if (CTime is not None):
         title += ' (convergence time = {} ms)'.format(CTime*(10**-6))
 
+    marker = '' if lines else 'o'
     lines = [] 
     # plot the results
     for flowID in flow_data.keys():
         times = time_data[flowID]
         y_vals = flow_data[flowID]
-        line, = plt.plot(times, y_vals, label='flow {}'.format(flowID), marker='o')
+        line, = plt.plot(times, y_vals, label='flow {}'.format(flowID), marker=marker)
         lines.append(line)
 
     if (CT_start is not None and CT_end is not None):
@@ -435,11 +440,14 @@ def plot_flow_data(time_data, flow_data, title, y_label, filename, y_lim=None):
         legline.set_picker(5)  # 5 pts tolerance
         PlotLineDic[fig_handle.canvas][legline] = origline
 
+    vlineDic[fig_handle] = None
+
     fig_handle.canvas.mpl_connect('pick_event', onpick)
+    fig_handle.canvas.mpl_connect('button_press_event', draw_vlines)
 
     global OUT_DIR
     if OUT_DIR != "":
-        save_plot(filename, OUT_DIR)
+        save_plot(filename, OUT_DIR, fig_handle)
 
 def onpick(event):
     global onpick_count, PlotLineDic
@@ -459,54 +467,75 @@ def onpick(event):
         event.canvas.draw()
     onpick_count += 1
 
-def save_plot(filename, out_dir):
+def draw_vlines(event):
+    global vlineDict
+    for fig, vline in vlineDic.items():
+        if vline is not None:
+            vline.set_visible(False)
+        vlineDic[fig] = fig.axes[0].axvline(x=event.xdata, color='r', linestyle='--')
+        fig.canvas.draw()   
+
+def save_plot(filename, out_dir, fig):
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
     plot_filename = os.path.join(out_dir, filename + '.pdf')
 
-#    fig = plt.gcf()
-#    mpld3.save_html(fig, plot_filename)
+#    ax = fig.axes[0]
+#    handles, labels = ax.get_legend_handles_labels() # return lines and labels
+#    interactive_legend = plugins.InteractiveLegendPlugin(zip(handles,
+#                                                             ax.collections),
+#                                                         labels,
+#                                                         alpha_unsel=0.5,
+#                                                         alpha_over=1.5, 
+#                                                         start_visible=True)
+#    plugins.connect(fig, interactive_legend)    
+#
 
+#    pickle.dump(fig, open(out_dir + '/FigureObject.fig.pickle', 'wb'))
     pp = PdfPages(plot_filename)
     pp.savefig()
     pp.close()
     print "Saved plot: ", plot_filename
 
+    fig.set_size_inches(28.9, 16.4)
+    mpld3.save_html(fig, plot_filename.replace('.pdf', '.html'))
+
+
 def make_plots(args=None):
     if (args.demand or args.all):
-        plot_flow_data(flowCtrlTimes, flowDemands, 'Flow demands over time', 'rate (Gbps)', 'demands', y_lim=[0,MAX_RATE+1])
+        plot_flow_data(flowCtrlTimes, flowDemands, 'Flow demands over time', 'rate (Gbps)', 'demands', y_lim=[0,MAX_RATE+1], lines=args.lines)
     if (args.alloc_0 or args.all):
-        plot_flow_data(flowCtrlTimes, flowAllocs[0], 'Flow allocations at first hop over time', 'rate (Gbps)', 'alloc_0')
+        plot_flow_data(flowCtrlTimes, flowAllocs[0], 'Flow allocations at first hop over time', 'rate (Gbps)', 'alloc_0', lines=args.lines)
     if (args.alloc_1 or args.all):
-        plot_flow_data(flowCtrlTimes, flowAllocs[1], 'Flow allocations at second hop over time', 'rate (Gbps)', 'alloc_1')
+        plot_flow_data(flowCtrlTimes, flowAllocs[1], 'Flow allocations at second hop over time', 'rate (Gbps)', 'alloc_1', lines=args.lines)
     if (args.alloc_2 or args.all):
-        plot_flow_data(flowCtrlTimes, flowAllocs[2], 'Flow allocations at third hop over time', 'rate (Gbps)', 'alloc_2')
+        plot_flow_data(flowCtrlTimes, flowAllocs[2], 'Flow allocations at third hop over time', 'rate (Gbps)', 'alloc_2', lines=args.lines)
     if (args.label_0 or args.all):
-        plot_flow_data(flowCtrlTimes, flowLabels[0], 'Flow labels at first hop over time', 'label', 'label_0', y_lim=[0,3])
+        plot_flow_data(flowCtrlTimes, flowLabels[0], 'Flow labels at first hop over time', 'label', 'label_0', y_lim=[0,3], lines=args.lines)
     if (args.label_1 or args.all):
-        plot_flow_data(flowCtrlTimes, flowLabels[1], 'Flow labels at second hop over time', 'label', 'label_1', y_lim=[0,3])
+        plot_flow_data(flowCtrlTimes, flowLabels[1], 'Flow labels at second hop over time', 'label', 'label_1', y_lim=[0,3], lines=args.lines)
     if (args.label_2 or args.all):
-        plot_flow_data(flowCtrlTimes, flowLabels[2], 'Flow labels at third hop over time', 'label', 'label_2', y_lim=[0,3])
+        plot_flow_data(flowCtrlTimes, flowLabels[2], 'Flow labels at third hop over time', 'label', 'label_2', y_lim=[0,3], lines=args.lines)
     if (args.linkCap or args.all):
-        plot_flow_data(flowCtrlTimes, flowLinkCaps, 'Flow linkCap measurements over time', 'rate (Gbps)', 'linkCap', y_lim=[0,MAX_RATE+1])
+        plot_flow_data(flowCtrlTimes, flowLinkCaps, 'Flow linkCap measurements over time', 'rate (Gbps)', 'linkCap', y_lim=[0,MAX_RATE+1], lines=args.lines)
     if (args.sumSat or args.all):
-        plot_flow_data(flowCtrlTimes, flowSumSats, 'Flow sumSat state over time', 'rate (Gbps)', 'sumSat', y_lim=[0,MAX_RATE+1])
+        plot_flow_data(flowCtrlTimes, flowSumSats, 'Flow sumSat state over time', 'rate (Gbps)', 'sumSat', y_lim=[0,MAX_RATE+1], lines=args.lines)
     if (args.numFlows or args.all):
-        plot_flow_data(flowCtrlTimes, flowNumFlows, 'Flow numFlows state over time', 'numFlows', 'numFlows')
+        plot_flow_data(flowCtrlTimes, flowNumFlows, 'Flow numFlows state over time', 'numFlows', 'numFlows', lines=args.lines)
     if (args.numSat or args.all):
-        plot_flow_data(flowCtrlTimes, flowNumSats, 'Flow numSat state over time', 'numSat', 'numSat')
+        plot_flow_data(flowCtrlTimes, flowNumSats, 'Flow numSat state over time', 'numSat', 'numSat', lines=args.lines)
     if (args.maxSat or args.all):
-        plot_flow_data(flowCtrlTimes, flowNewMaxSats, 'Flow maxSat state over time', 'rate (Gbps)', 'maxSat', y_lim=[0,MAX_RATE+1])
+        plot_flow_data(flowCtrlTimes, flowNewMaxSats, 'Flow maxSat state over time', 'rate (Gbps)', 'maxSat', y_lim=[0,MAX_RATE+1], lines=args.lines)
     if (args.R or args.all):
-        plot_flow_data(flowCtrlTimes, flowRs, 'Flow R measurements over time', 'rate (Gbps)', 'R', y_lim=[0,MAX_RATE+1])
+        plot_flow_data(flowCtrlTimes, flowRs, 'Flow R measurements over time', 'rate (Gbps)', 'R', y_lim=[0,MAX_RATE+1], lines=args.lines)
     if (args.nf0_data or args.nf1_data or args.nf2_data or args.nf3_data):
         plot_data_q_data(args)
     if (args.nf0_ctrl or args.nf1_ctrl or args.nf2_ctrl or args.nf3_ctrl):
         plot_ctrl_q_data(args)    
     if (args.rate or args.all):
-        plot_flow_data(flowAvgTimes, flowRates, 'Measured flow rates over time (avg interval = {} sec)'.format(RATE_AVG_INTERVAL), 'rate (Gbps)', 'flow_rates', y_lim=[0,MAX_RATE+1])
+        plot_flow_data(flowAvgTimes, flowRates, 'Measured flow rates over time (avg interval = {} sec)'.format(RATE_AVG_INTERVAL), 'rate (Gbps)', 'flow_rates', y_lim=[0,MAX_RATE+1], lines=args.lines)
     if (args.seq or args.all):
-        plot_flow_data(flowDataTimes, flowSeqNos, 'Flow Sequence Numbers over time', 'seqNo', 'seqNo')
+        plot_flow_data(flowDataTimes, flowSeqNos, 'Flow Sequence Numbers over time', 'seqNo', 'seqNo', lines=args.lines)
 
     font = {'family' : 'normal',
             'weight' : 'bold',
@@ -542,6 +571,7 @@ def main():
     parser.add_argument('--rtt', action='store_true', default=False, help='report the average rtt')
     parser.add_argument('--rate', action='store_true', default=False, help='plot the measured data rate of each flow')
     parser.add_argument('--seq', action='store_true', default=False, help='plot the data seqNo for each flow')
+    parser.add_argument('--lines', action='store_true', default=False, help='just plot the lines and no data points')
     parser.add_argument('--workload', type=str, default="", help="the file that specifies the workload that was run to produce these results")
     parser.add_argument('--out', type=str, default="", help="the output directory to store results")
     args = parser.parse_args()
