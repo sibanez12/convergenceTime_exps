@@ -473,7 +473,10 @@ def draw_vlines(event):
         if vline is not None:
             vline.set_visible(False)
         vlineDic[fig] = fig.axes[0].axvline(x=event.xdata, color='r', linestyle='--')
-        fig.canvas.draw()   
+        try:
+            fig.canvas.draw()   
+        except:
+            print >> sys.stderr, "Caught error... moving on"
 
 def save_plot(filename, out_dir, fig):
     if not os.path.exists(out_dir):
