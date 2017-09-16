@@ -443,7 +443,7 @@ def plot_flow_data(time_data, flow_data, title, y_label, filename, y_lim=None, l
     vlineDic[fig_handle] = None
 
     fig_handle.canvas.mpl_connect('pick_event', onpick)
-    fig_handle.canvas.mpl_connect('button_press_event', draw_vlines)
+#    fig_handle.canvas.mpl_connect('button_press_event', draw_vlines)
 
     global OUT_DIR
     if OUT_DIR != "":
