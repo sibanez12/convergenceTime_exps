@@ -43,6 +43,7 @@ from ct_experiment_iperf import CT_Experiment
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', action='store_true', default=False, help='configure the host interfaces by adding the necessary routes and populating the ARP tables')
+    parser.add_argument('--tcp', type=str, default='dctcp', help='version of tcp to use')
     parser.add_argument('flowsFile', type=str, help="the txt file that contains the flows to run in the experiment")
     args = parser.parse_args()
 
@@ -54,7 +55,7 @@ def main():
     
     # get the global start time, distributed to each of the
     # required hosts, and run the experiment 
-    exp.runExperiment()
+    exp.runExperiment(args.tcp)
 
 #    # copy all log files to a single location, parse the
 #    # results to determine the convergence times

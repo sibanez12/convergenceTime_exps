@@ -102,18 +102,18 @@ class CT_Experiment:
     get the global start time, distributed to each of the
     required hosts, and run the experiment 
     """
-    def runExperiment(self):
+    def runExperiment(self, tcp_version):
         currTime = get_real_time()
         expStartTime = int(math.floor(currTime + 5)) # start the experiment 5 seconds from now
 
-        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} {2} /usr/bin/iperf3 -p {3} -c {4} -t {5} -C reno"')
+        start_iperf_client = os.path.expandvars('ssh root@{0} "$CT_EXP_DIR/exec_at {1} {2} /usr/bin/iperf3 -p {3} -c {4} -t {5} -C {6}"')
 
         # start iperf clients on each src machine
         for flow in self.workload.flows:
             startTime = expStartTime + flow['startTime']
             startTime_sec = int(startTime)
             startTime_nsec = int((startTime - int(startTime))*(10**9))
-            command = start_iperf_client.format(flow['srcHost'], startTime_sec, startTime_nsec, flow['port'], flow['dstIP'], flow['duration'])
+            command = start_iperf_client.format(flow['srcHost'], startTime_sec, startTime_nsec, flow['port'], flow['dstIP'], flow['duration'], tcp_version)
             p = self.startProcess(command)
             self.iperf_clients.append((flow['srcHost'], p))
 

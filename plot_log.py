@@ -14,6 +14,10 @@ flowTimes = OrderedDict()
 flowSeqNos = OrderedDict()
 flowPktSizes = OrderedDict()
 
+flowEcn = OrderedDict()
+flowCwr = OrderedDict()
+flowEce = OrderedDict()
+
 q_sizes = OrderedDict() # indexed by queue number
 q_sizes[0] = []
 q_sizes[1] = []
@@ -43,6 +47,9 @@ CTime = None
 CT_start = None
 CT_end = None
 
+PlotLineDic = {}
+onpick_count = 0
+
 """
 Write the data from the pkts into a csv so we don't have to
 read the pcap trace again. The csv file will be written into
@@ -55,6 +62,7 @@ def read_pcap_pkts(pcap_file):
     with open(out_file, 'w') as f:
         for (pkt, _) in pcap_pkts:
             try:
+                tos = struct.unpack(">B", pkt[15])[0]
                 ip_len = struct.unpack(">H", pkt[16:18])[0]
                 proto = struct.unpack(">B", pkt[23])[0]
                 src_ip = socket.inet_ntoa(pkt[26:30])
@@ -62,6 +70,7 @@ def read_pcap_pkts(pcap_file):
                 src_port = struct.unpack(">H", pkt[34:36])[0]
                 dst_port = struct.unpack(">H", pkt[36:38])[0]
                 seqNo = struct.unpack(">L", pkt[38:42])[0]
+                tcp_flags = struct.unpack(">B", pkt[47])[0]
                 timestamp = struct.unpack(">Q", pkt[54:62])[0]
                 nf0_q_size = struct.unpack("<H", pkt[62:64])[0]
                 nf1_q_size = struct.unpack("<H", pkt[64:66])[0]
@@ -69,7 +78,7 @@ def read_pcap_pkts(pcap_file):
                 nf3_q_size = struct.unpack("<H", pkt[68:70])[0]
                 f.write ('{},{},{},{},{},{},{},{}\n'.format(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp))
                 if proto == TCP_PROTO:
-                    log_pkt(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp, nf0_q_size, nf1_q_size, nf2_q_size, nf3_q_size) 
+                    log_pkt(tos, ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, tcp_flags, timestamp, nf0_q_size, nf1_q_size, nf2_q_size, nf3_q_size) 
             except struct.error as e:
 #                print >> sys.stderr, "WARNING: could not unpack packet to obtain all fields"
                 pass
@@ -80,7 +89,7 @@ def read_csv_pkts(csv_file):
         for row in reader:
             log_pkt(int(row[0]), int(row[1]), row[2], row[3], int(row[4]), int(row[5]), int(row[6]), int(row[7]), int(row[8]), int(row[9]), int(row[10]), int(row[11]))
 
-def log_pkt(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp, nf0_q_size, nf1_q_size, nf2_q_size, nf3_q_size):
+def log_pkt(tos, ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, tcp_flags, timestamp, nf0_q_size, nf1_q_size, nf2_q_size, nf3_q_size):
     flowID = (src_ip, dst_ip, proto, src_port, dst_port)
     if dst_port >= BASE_PORT and dst_port <= BASE_PORT + MAX_NUM_FLOWS:
         q_sizes[0].append(nf0_q_size*32.0) # bytes
@@ -93,10 +102,19 @@ def log_pkt(ip_len, proto, src_ip, dst_ip, src_port, dst_port, seqNo, timestamp,
             flowTimes[flowID] = [timestamp*5.0]
             flowSeqNos[flowID] = [0]
             flowPktSizes[flowID] = [ip_len - HEADER_SIZE]
+            flowEcn[flowID] = [tos & 0b00000011]
+            flowEce[flowID] = [(tcp_flags & 0b01000000) >> 6]
+            flowCwr[flowID] = [(tcp_flags & 0b10000000) >> 7]
         else:
             flowTimes[flowID].append(timestamp*5.0)
-            flowSeqNos[flowID].append(seqNo - initSeqNos[flowID])
             flowPktSizes[flowID].append(ip_len - HEADER_SIZE)
+            flowEcn[flowID].append(tos & 0b00000011)
+            flowEce[flowID].append((tcp_flags & 0b01000000) >> 6)
+            flowCwr[flowID].append((tcp_flags & 0b10000000) >> 7)
+            if seqNo < initSeqNos[flowID]:
+                flowSeqNos[flowID].append(seqNo + 2**32 - initSeqNos[flowID])
+            else:
+                flowSeqNos[flowID].append(seqNo - initSeqNos[flowID])
 
 def calc_flow_stats():
     for flowID in flowTimes.keys():
@@ -111,6 +129,9 @@ def calc_flow_stats():
             del flowTimes[flowID]
             del flowSeqNos[flowID]
             del flowPktSizes[flowID]
+            del flowEcn[flowID]
+            del flowEce[flowID]
+            del flowCwr[flowID]
 
 def process_flow(times, pktSizes, seqNos):
     rate_vals = []
@@ -267,6 +288,13 @@ def get_rate_samples(index):
 def plot_q_data(nf0, nf1, nf2, nf3):
     fig_handle =  plt.figure()
 
+#    # plot ECN marking on same plot to compare
+#    for flowID in flowEcn.keys():
+#        times = flowTimes[flowID]
+#        y_vals = flowEcn[flowID]
+#        y_vals = [y*260e3/3.0 for y in y_vals]
+#        plt.plot(times, y_vals, label='({}, {}) ECN markings'.format(flowID[0],flowID[1]), marker='o')
+
     if (nf0):
         plt.plot(q_size_time, q_sizes[0], label='nf0', marker='o')
     if (nf1):
@@ -276,7 +304,7 @@ def plot_q_data(nf0, nf1, nf2, nf3):
     if (nf3):
         plt.plot(q_size_time, q_sizes[3], label='nf3', marker='o')
 
-    plt.subplots_adjust(right=0.9)    
+    plt.subplots_adjust(right=0.75)    
     plt.legend(bbox_to_anchor=(1.01,1), loc="upper left")
     plt.title('Output Queue Sizes over time')
     plt.xlabel('time (ns)')
@@ -284,25 +312,34 @@ def plot_q_data(nf0, nf1, nf2, nf3):
 
 
 def plot_flow_data(time_data, flow_data, title, y_label, y_lim=None):
-    global CTime, CT_start, CT_end
+    global CTime, CT_start, CT_end, PlotLineDic
 
     fig_handle =  plt.figure()
+    PlotLineDic[fig_handle.canvas] = {}
 
     if (CTime is not None):
         title += ' (convergence time = {} ms)'.format(CTime*(10**-6))
- 
+
+    lines = [] 
     # plot the results
     for flowID in flow_data.keys():
         times = time_data[flowID]
         y_vals = flow_data[flowID]
-        plt.plot(times, y_vals, label='({}, {})'.format(flowID[0],flowID[1]), marker='o')
+        line, = plt.plot(times, y_vals, label='({}, {})'.format(flowID[0],flowID[1]), marker='o')
+        lines.append(line)
+
+#    # plot ECN marking on same plot to compare
+#    for flowID in flowEcn.keys():
+#        times = flowTimes[flowID]
+#        y_vals = flowEcn[flowID]
+#        plt.plot(times, y_vals, label='({}, {}) ECN markings'.format(flowID[0],flowID[1]), marker='o')
 
     if (CT_start is not None and CT_end is not None):
         plt.axvline(x=CT_start, color='r', linestyle='--')
         plt.axvline(x=CT_end, color='r', linestyle='--')
 
     plt.subplots_adjust(right=0.7)    
-    plt.legend(bbox_to_anchor=(1.01,1), loc="upper left")
+    leg = plt.legend(bbox_to_anchor=(1.01,1), loc="upper left")
     plt.title(title)
     plt.xlabel('time (ns)')
     plt.ylabel(y_label)
@@ -310,15 +347,45 @@ def plot_flow_data(time_data, flow_data, title, y_label, y_lim=None):
         axes = plt.gca()
         axes.set_ylim(y_lim)
 
-def make_plots(seq, rate, goodput, nf0, nf1, nf2, nf3):
-    if (seq):
+    for legline, origline in zip(leg.get_lines(), lines):
+        legline.set_picker(5)  # 5 pts tolerance
+        PlotLineDic[fig_handle.canvas][legline] = origline
+
+    fig_handle.canvas.mpl_connect('pick_event', onpick)
+
+def onpick(event):
+    global onpick_count, PlotLineDic
+    if onpick_count % 2 == 0:
+        # on the pick event, find the orig line corresponding to the
+        # legend proxy line, and toggle the visibility
+        legline = event.artist
+        origline = PlotLineDic[event.canvas][legline]
+        vis = not origline.get_visible()
+        origline.set_visible(vis)
+        # Change the alpha on the line in the legend so we can see what lines
+        # have been toggled
+        if vis:
+            legline.set_alpha(1.0)
+        else:
+            legline.set_alpha(0.2)
+        event.canvas.draw()
+    onpick_count += 1
+
+def make_plots(args):
+    if (args.seq):
         plot_flow_data(flowTimes, flowSeqNos, 'Flow Sequence Numbers over time', 'SeqNo')
-    if (rate):
+    if (args.rate):
         plot_flow_data(flowAvgTimes, flowRates, 'Avg Flow Rates (avg interval = {} sec)'.format(RATE_AVG_INTERVAL), 'Rate (Gbps)')
-    if (goodput):
+    if (args.goodput):
         plot_flow_data(flowAvgTimes, flowGoodputs, 'Avg Goodputs (avg interval = {} sec)'.format(RATE_AVG_INTERVAL), 'Goodput (Gbps)')
-    if (nf0 or nf1 or nf2 or nf3):
-        plot_q_data(nf0, nf1, nf2, nf3)
+    if (args.ecn):
+        plot_flow_data(flowTimes, flowEcn, 'Flow ECN values over time', 'ECN Value')
+    if (args.ece):
+        plot_flow_data(flowTimes, flowEce, 'Flow ECE flag over time', 'ECE Value')
+    if (args.cwr):
+        plot_flow_data(flowTimes, flowCwr, 'Flow CWR flag over time', 'CWR Value')
+    if (args.nf0 or args.nf1 or args.nf2 or args.nf3):
+        plot_q_data(args.nf0, args.nf1, args.nf2, args.nf3)
 
     font = {'family' : 'normal',
             'weight' : 'bold',
@@ -332,6 +399,9 @@ def main():
     parser.add_argument('--seq', action='store_true', default=False, help='plot the seqNos of each flow')
     parser.add_argument('--rate', action='store_true', default=False, help='plot the avg rate of each flow')
     parser.add_argument('--goodput', action='store_true', default=False, help='plot the avg goodput of each flow')
+    parser.add_argument('--ecn', action='store_true', default=False, help='plot the value of the ECN field in the IP header')
+    parser.add_argument('--ece', action='store_true', default=False, help='plot the value of the ece TCP flag')
+    parser.add_argument('--cwr', action='store_true', default=False, help='plot the value of the cwr TCP flag')
     parser.add_argument('--nf0', action='store_true', default=False, help='plot size of nf0 output queue over time')
     parser.add_argument('--nf1', action='store_true', default=False, help='plot size of nf1 output queue over time')
     parser.add_argument('--nf2', action='store_true', default=False, help='plot size of nf2 output queue over time')
@@ -351,7 +421,7 @@ def main():
     calc_flow_stats()
     if (args.workload != ""):
         log_CT(args.workload) 
-    make_plots(args.seq, args.rate, args.goodput, args.nf0, args.nf1, args.nf2, args.nf3)
+    make_plots(args)
 
 
 if __name__ == "__main__":
