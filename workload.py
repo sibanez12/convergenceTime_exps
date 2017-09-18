@@ -14,7 +14,7 @@ class Workload:
         self.flowsFile = flowsFile
         self.numLinksFormat = r'num_links: ([\d]*)'
         self.linkCapFormat = r'link_capacities \(Gbps\): ([\d]*)'
-        self.flowFormat = r'(?P<startTime>[ \d\.]*),(?P<duration>[ \d]*),(?P<numConn>[ \d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
+        self.flowFormat = r'(?P<startTime>[ \d\.]*),(?P<duration>[ \d]*): (?P<srcIP>[\d\.]*),[ ]*(?P<dstIP>[\d\.]*) -> (?P<links>[ \d,]*)'
         self.ip_info = ip_info 
         
         # self.flows is a list with entries of the form: 
@@ -71,21 +71,18 @@ class Workload:
             flow['srcHost'] = self.ip_info[flow['srcIP']]['hostname']
             flow['dstHost'] = self.ip_info[flow['dstIP']]['hostname']
             flow['startTime'] = float(flow['startTime'])
-            numConn = int(flow['numConn'])
-            flow['numConn'] = numConn
-            offset_id += numConn 
             dur = int(flow['duration'])
             flow['duration'] = dur
             self.max_flow_dur = dur if (dur > self.max_flow_dur) else self.max_flow_dur 
 
         self.allHosts = {}
-        for host in allHosts:
-            host_dict = {}
-            if host in self.srcHosts:
-                host_flows = [flow for flow in self.flows if flow['srcHost'] == host]
-                assert(len(host_flows) == 1)
-                host_dict['flow'] = host_flows[0] # only support one "flow" per host for now
-            else:
-                host_dict['flow'] = None
-            self.allHosts[host] = host_dict
+#        for host in allHosts:
+#            host_dict = {}
+#            if host in self.srcHosts:
+#                host_flows = [flow for flow in self.flows if flow['srcHost'] == host]
+#                assert(len(host_flows) == 1)
+#                host_dict['flow'] = host_flows[0] # only support one "flow" per host for now
+#            else:
+#                host_dict['flow'] = None
+#            self.allHosts[host] = host_dict
 

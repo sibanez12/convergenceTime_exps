@@ -71,7 +71,7 @@ DATA_PKT_SIZE = 1460 # bytes
 BASE_PORT = 915
 MAX_NUM_FLOWS = 100
 
-MAX_RATE = 8 # Gbps
+MAX_RATE = 9 # Gbps
 MIN_RATE = 0.01 # Gbps
 
 CTime = None
@@ -259,16 +259,12 @@ def process_flow(times, seqNos):
 def dump_flow_info():
      # plot the results
     for flowID in flowRates.keys():
-        times = flowTimes[flowID]
-        demands = flowDemands[flowID]
-        allocs = flowAllocs[flowID]
-        labels = flowLabels[flowID]
-        with open('flow_{}_rate.csv'.format(flowID), 'wb') as csvfile:
-            wr = csv.writer(csvfile)
-            wr.writerow(times)
-            wr.writerow(demands)
-            wr.writerow(allocs)
-            wr.writerow(labels)
+        times = flowAvgTimes[flowID]
+        rates = flowRates[flowID]
+        filename = os.path.join(OUT_DIR, 'flow_{}_rate.csv'.format(flowID))
+        with open(filename, 'w') as f:
+            for t, r in zip(times, rates):
+                f.write('{},{}\n'.format(t,r))
 
 def log_CT(workload_file):
     global CTime, CT_start, CT_end
@@ -290,7 +286,7 @@ def compute_CT(workload_file):
     idealRates = wf.maxmin_x
 
     # find the time of the last flow change
-    start_time = max([time[0] for time in flowAvgTimes.values()])
+    start_time = max([time[0] for time in flowCtrlTimes.values()])
     cnv_win_start_vals = get_flow_start_times()
     cnv_win_end_vals = get_flow_start_times()
     last_sample_ct = init_last_samples() # dict to keep track of whether or not the last sample of this flow was in the correct range
@@ -326,8 +322,8 @@ def check_convergence(cnv_win_start_vals, cnv_win_end_vals):
 
 def init_last_samples():
     last_sample_ct = {}
-    for flow_tuple in flowRates.keys():
-        flow_num = flow_tuple[4] - BASE_PORT
+    for flowID in flowDemands.keys():
+        flow_num = flowID - 1
         last_sample_ct[flow_num] = False
     return last_sample_ct
 
@@ -338,9 +334,9 @@ The points are sorted by the time value
 """                
 def make_rate_list():
     rate_list = []
-    for flow_tuple in flowRates.keys():
-        flow_num = flow_tuple[4] - BASE_PORT
-        rate_list += zip(flowAvgTimes[flow_tuple], flowRates[flow_tuple], [flow_num]*len(flowRates[flow_tuple]))
+    for flowID in flowDemands.keys():
+        flow_num = flowID - 1
+        rate_list += zip(flowCtrlTimes[flowID], flowDemands[flowID], [flow_num]*len(flowDemands[flowID]))
     # combine lists stored in rate_points dict and sort by the first element of each point
     rate_list.sort(key=lambda x: x[0])
     return rate_list
@@ -348,24 +344,23 @@ def make_rate_list():
  
 def get_flow_start_times():
     start_times = {}
-    for flow_tuple in flowAvgTimes.keys():
-        dst_port = flow_tuple[4]
-        flow_num = dst_port - BASE_PORT
-        start_times[flow_num] = flowAvgTimes[flow_tuple][0]
+    for flowID in flowCtrlTimes.keys():
+        flow_num = flowID - 1
+        start_times[flow_num] = flowCtrlTimes[flowID][0]
     return start_times
 
-def get_rate_samples(index):
-    time_samps = {}
-    rate_samps = {}
-    for flow_tuple in flowAvgTimes.keys():
-        if index >= len(flowAvgTimes[flow_tuple]):
-            return None, None
-        else:
-            dst_port = flow_tuple[4]
-            flow_num = dst_port - BASE_PORT
-            time_samps[flow_num] = flowAvgTimes[flow_tuple][index]
-            rate_samps[flow_num] = flowRates[flow_tuple][index]
-    return (time_samps, rate_samps)
+#def get_rate_samples(index):
+#    time_samps = {}
+#    rate_samps = {}
+#    for flow_tuple in flowAvgTimes.keys():
+#        if index >= len(flowAvgTimes[flow_tuple]):
+#            return None, None
+#        else:
+#            dst_port = flow_tuple[4]
+#            flow_num = dst_port - BASE_PORT
+#            time_samps[flow_num] = flowAvgTimes[flow_tuple][index]
+#            rate_samps[flow_num] = flowRates[flow_tuple][index]
+#    return (time_samps, rate_samps)
 
 def plot_data_q_data(args):
     fig_handle =  plt.figure()
@@ -575,6 +570,7 @@ def main():
     parser.add_argument('--rate', action='store_true', default=False, help='plot the measured data rate of each flow')
     parser.add_argument('--seq', action='store_true', default=False, help='plot the data seqNo for each flow')
     parser.add_argument('--lines', action='store_true', default=False, help='just plot the lines and no data points')
+    parser.add_argument('--dump', action='store_true', default=False, help='Dump the measured flow rates to a file')
     parser.add_argument('--workload', type=str, default="", help="the file that specifies the workload that was run to produce these results")
     parser.add_argument('--out', type=str, default="", help="the output directory to store results")
     args = parser.parse_args()
@@ -585,6 +581,8 @@ def main():
     read_pcap_pkts(args.logged_pkts)
     calc_flow_stats()
 
+    if (args.dump):
+        dump_flow_info()
     if (args.rtt):
         report_rtt()
 
